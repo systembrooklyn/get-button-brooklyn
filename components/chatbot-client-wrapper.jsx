@@ -105,7 +105,6 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
   const navigationItems = [
     { id: "chatbots", label: "Chatbots", icon: MessageCircle },
     { id: "history", label: "Chatlogs", icon: History },
-    { id: "corrections", label: "Corrections", icon: Settings },
     { id: "billing", label: "Billing", icon: ShoppingCart },
   ];
 
@@ -372,23 +371,6 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
                     </h2>
                   </Card>
                 )}
-              </div>
-            )}
-
-            {selectedTab === "corrections" && (
-              <div>
-                <h2 className="text-2xl font-bold text-foreground mb-6">
-                  Corrections
-                </h2>
-                <Card className="p-12 text-center bg-card border-border">
-                  <Settings className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                  <h2 className="text-lg font-semibold text-foreground">
-                    Coming soon
-                  </h2>
-                  <p className="text-muted-foreground text-sm mt-2">
-                    This feature will allow you to correct chatbot responses
-                  </p>
-                </Card>
               </div>
             )}
 
