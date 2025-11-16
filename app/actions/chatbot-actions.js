@@ -16,7 +16,14 @@ export async function createChatbot(data) {
   const { syncUserToPrisma } = await import("./user-actions.js");
   await syncUserToPrisma();
 
-  const { name, tagline, greetingMessage, systemPrompt, dataSourceUrl } = data;
+  const {
+    name,
+    tagline,
+    greetingMessage,
+    systemPrompt,
+    dataSourceUrl,
+    avatar,
+  } = data;
 
   if (!name || !tagline || !greetingMessage || !systemPrompt) {
     throw new Error("Missing required fields");
@@ -30,6 +37,7 @@ export async function createChatbot(data) {
       greetingMessage,
       systemPrompt,
       dataSourceUrl: dataSourceUrl || "",
+      avatar: avatar || "",
     },
     include: {
       messages: true,
