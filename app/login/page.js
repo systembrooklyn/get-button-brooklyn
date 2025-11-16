@@ -90,7 +90,7 @@ export default function LoginPage() {
 
         <div className="text-center text-sm">
           <span className="text-muted-foreground">Dont have an account? </span>
-          <Link href="/app/signup" className="font-medium hover:underline">
+          <Link href="/signup" className="font-medium hover:underline">
             Sign up
           </Link>
         </div>

@@ -1,224 +1,182 @@
 "use server";
 
-import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { randomUUID } from "crypto";
+import { createClient } from "@/utils/supabase/server";
 
-export async function createChatbot(formData) {
+export async function createChatbot(data) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) throw new Error("User not authenticated");
+  if (!user) {
+    throw new Error("User not authenticated");
+  }
 
-  const existingChatbots = await prisma.chatbot.findMany({
-    where: {
-      userId: user.id,
-    },
-  });
+  const { syncUserToPrisma } = await import("./user-actions.js");
+  await syncUserToPrisma();
 
-  if (existingChatbots && existingChatbots.length >= 2) {
-    throw new Error(
-      "You can only create up to 2 chatbots. Delete one to create another."
-    );
+  const { name, tagline, greetingMessage, systemPrompt, dataSourceUrl } = data;
+
+  if (!name || !tagline || !greetingMessage || !systemPrompt) {
+    throw new Error("Missing required fields");
   }
 
   const chatbot = await prisma.chatbot.create({
     data: {
-      id: randomUUID(),
       userId: user.id,
-      name: formData.name,
-      tagline: formData.tagline || "",
-      greetingMessage: formData.greetingMessage || "Hello! How can I help?",
-      avatar:
-        formData.avatar ||
-        "https://ui-avatars.com/api/?name=" + encodeURIComponent(formData.name),
-      systemPrompt: formData.systemPrompt,
-      dataSourceUrl: formData.dataSourceUrl || "",
-      messageCount: 0,
-      messagesLimit: 20,
+      name,
+      tagline,
+      greetingMessage,
+      systemPrompt,
+      dataSourceUrl: dataSourceUrl || "",
+    },
+    include: {
+      messages: true,
     },
   });
 
   return chatbot;
 }
 
-export async function getChatbots() {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      throw new Error("User not authenticated");
-    }
-
-    const chatbots = await prisma.chatbot.findMany({
-      where: { userId: user.id },
-      include: {
-        messages: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    return chatbots;
-  } catch (error) {
-    console.error("[v0] Error fetching chatbots:", error);
-    return [];
+export async function getChatbotByUserId(userid) {
+  if (!userid) {
+    throw new Error("User ID is required");
   }
+
+  const chatbots = await prisma.chatbot.findMany({
+    where: {
+      userId: userid,
+    },
+    include: {
+      messages: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return chatbots;
 }
 
 export async function getChatbotById(chatbotId) {
-  try {
-    const chatbot = await prisma.chatbot.findUnique({
-      where: { id: chatbotId },
-      include: {
-        messages: true,
-      },
-    });
-    return chatbot;
-  } catch (error) {
-    console.error("[v0] Error fetching chatbot:", error);
-    return null;
+  if (!chatbotId) {
+    throw new Error("Chatbot ID is required");
   }
+
+  const chatbot = await prisma.chatbot.findUnique({
+    where: {
+      id: chatbotId,
+    },
+    include: {
+      messages: true,
+    },
+  });
+
+  return chatbot;
 }
 
-export async function updateChatbot(chatbotId, updates) {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+export async function updateChatbot(chatbotId, data) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-    if (!user) throw new Error("User not authenticated");
-
-    const chatbot = await prisma.chatbot.findUnique({
-      where: { id: chatbotId },
-    });
-
-    if (!chatbot || chatbot.userId !== user.id) {
-      throw new Error("Unauthorized: You can only update your own chatbots");
-    }
-
-    const updated = await prisma.chatbot.update({
-      where: { id: chatbotId },
-      data: updates,
-    });
-    return updated;
-  } catch (error) {
-    console.error("[v0] Error updating chatbot:", error);
-    throw error;
+  if (!user) {
+    throw new Error("User not authenticated");
   }
+
+  // Verify the chatbot belongs to the user
+  const chatbot = await prisma.chatbot.findUnique({
+    where: { id: chatbotId },
+  });
+
+  if (!chatbot) {
+    throw new Error("Chatbot not found");
+  }
+
+  if (chatbot.userId !== user.id) {
+    throw new Error("Unauthorized: You do not own this chatbot");
+  }
+
+  const { name, tagline, greetingMessage, systemPrompt, avatar } = data;
+
+  const updatedChatbot = await prisma.chatbot.update({
+    where: { id: chatbotId },
+    data: {
+      ...(name && { name }),
+      ...(tagline && { tagline }),
+      ...(greetingMessage && { greetingMessage }),
+      ...(systemPrompt && { systemPrompt }),
+      ...(avatar && { avatar }),
+    },
+    include: {
+      messages: true,
+    },
+  });
+
+  return updatedChatbot;
 }
 
 export async function deleteChatbot(chatbotId) {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-    if (!user) throw new Error("User not authenticated");
-
-    const chatbot = await prisma.chatbot.findUnique({
-      where: { id: chatbotId },
-    });
-
-    if (!chatbot || chatbot.userId !== user.id) {
-      throw new Error("Unauthorized: You can only delete your own chatbots");
-    }
-
-    await prisma.chatMessage.deleteMany({
-      where: { chatbotId },
-    });
-
-    await prisma.chatbot.delete({
-      where: { id: chatbotId },
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error("[v0] Error deleting chatbot:", error);
-    throw error;
+  if (!user) {
+    throw new Error("User not authenticated");
   }
+
+  // Verify the chatbot belongs to the user
+  const chatbot = await prisma.chatbot.findUnique({
+    where: { id: chatbotId },
+  });
+
+  if (!chatbot) {
+    throw new Error("Chatbot not found");
+  }
+
+  if (chatbot.userId !== user.id) {
+    throw new Error("Unauthorized: You do not own this chatbot");
+  }
+
+  await prisma.chatbot.delete({
+    where: { id: chatbotId },
+  });
+
+  return { success: true };
 }
 
-export async function addMessage(chatbotId, role, content) {
-  const messageId = randomUUID();
+export async function addChatMessage(chatbotId, role, content) {
+  if (!chatbotId || !role || !content) {
+    throw new Error("Missing required fields");
+  }
 
   const message = await prisma.chatMessage.create({
     data: {
-      id: messageId,
       chatbotId,
       role,
       content,
     },
   });
 
-  if (role === "user") {
-    await prisma.chatbot.update({
-      where: { id: chatbotId },
-      data: { messageCount: { increment: 1 } },
-    });
-  }
-
   return message;
 }
 
-export async function getChatHistory(chatbotId) {
-  try {
-    const messages = await prisma.chatMessage.findMany({
-      where: { chatbotId },
-      orderBy: { createdAt: "asc" },
-    });
-    return messages;
-  } catch (error) {
-    console.error("[v0] Error fetching chat history:", error);
-    return [];
-  }
-}
-
-export async function getChatbotByUserId(userId) {
-  try {
-    const chatbots = await prisma.chatbot.findMany({
-      where: { userId },
-      include: {
-        messages: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    return chatbots || [];
-  } catch (error) {
-    console.error("[v0] Error fetching chatbots for user:", error.message);
-    try {
-      await prisma.$disconnect();
-      const retryResult = await prisma.chatbot.findMany({
-        where: { userId },
-        include: {
-          messages: true,
-        },
-        orderBy: { createdAt: "desc" },
-      });
-      return retryResult || [];
-    } catch (retryError) {
-      console.error("[v0] Retry failed:", retryError.message);
-      return [];
-    }
-  }
-}
-
 export async function getChatbotMessages(chatbotId) {
-  try {
-    const messages = await prisma.chatMessage.findMany({
-      where: { chatbotId },
-      orderBy: { createdAt: "asc" },
-    });
-    return messages;
-  } catch (error) {
-    console.error("[v0] Error fetching messages:", error);
-    return [];
+  if (!chatbotId) {
+    throw new Error("Chatbot ID is required");
   }
+
+  const messages = await prisma.chatMessage.findMany({
+    where: {
+      chatbotId,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  return messages;
 }

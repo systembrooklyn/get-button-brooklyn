@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,13 +9,13 @@ import {
   Trash2,
   Settings,
   History,
-  BarChart3,
   ShoppingCart,
   Edit2,
   Play,
 } from "lucide-react";
 import CreateChatbotModal from "@/components/create-chatbot-modal";
 import EditChatbotModal from "@/components/edit-chatbot-modal";
+import { FloatingChatWidget } from "@/components/floating-chat-widget";
 import {
   getChatbotByUserId,
   deleteChatbot,
@@ -27,8 +26,8 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedChatbotForEdit, setSelectedChatbotForEdit] = useState(null);
+  const [testingChatbot, setTestingChatbot] = useState(null);
   const [selectedTab, setSelectedTab] = useState("chatbots");
-  const router = useRouter();
 
   const totalMessagesUsed = chatbots.reduce(
     (sum, c) => sum + (c.messageCount || 0),
@@ -69,13 +68,28 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
     setIsEditModalOpen(true);
   };
 
-  const handleTestChatbot = (chatbotId) => {
-    router.push(`/chatbot/test?botId=${chatbotId}`);
+  const handleTestChatbot = (chatbot) => {
+    setTestingChatbot(chatbot);
   };
 
   const handleChatbotUpdated = async () => {
     await handleChatbotCreated();
     setIsEditModalOpen(false);
+  };
+
+  const handleCloseTestWidget = async () => {
+    setTestingChatbot(null);
+    try {
+      const updatedChatbots = await getChatbotByUserId(userId);
+      const formatted = (updatedChatbots || []).map((chatbot) => ({
+        ...chatbot,
+        messageCount: chatbot.messages ? chatbot.messages.length : 0,
+        messages: chatbot.messages || [],
+      }));
+      setChatbots(formatted);
+    } catch (error) {
+      console.error("[v0] Error refreshing chatbots:", error);
+    }
   };
 
   const navigationItems = [
@@ -86,10 +100,8 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
   ];
 
   return (
-    <div className="min-h-screen flex bg-white">
-      {/* Left Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        {/* Navigation */}
+    <div className="min-h-screen flex bg-background">
+      <aside className="w-64 bg-card border-r border-border flex flex-col">
         <nav className="flex-1 p-6 space-y-2">
           {navigationItems.map((item) => {
             const Icon = item.icon;
@@ -99,8 +111,8 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
                 onClick={() => setSelectedTab(item.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
                   selectedTab === item.id
-                    ? "bg-blue-50 text-blue-600"
-                    : "text-gray-600 hover:bg-gray-50"
+                    ? "bg-accent/10 text-accent font-medium"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -110,21 +122,22 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
           })}
         </nav>
 
-        {/* Messages Remaining Card */}
-        <div className="p-6 border-t border-gray-200">
-          <div className="p-4 bg-white border-2 border-blue-300 rounded-lg">
-            <h3 className="text-xs font-semibold text-gray-700 mb-3">
+        <div className="p-6 border-t border-border">
+          <div className="p-4 bg-card border-2 border-accent rounded-lg space-y-3">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Messages Remaining
             </h3>
-            <div className="mb-3">
-              <p className="text-3xl font-bold text-blue-600">
+            <div>
+              <p className="text-3xl font-bold text-accent">
                 {messagesRemaining}
               </p>
-              <p className="text-xs text-gray-600">of {totalMessagesLimit}</p>
+              <p className="text-xs text-muted-foreground">
+                of {totalMessagesLimit}
+              </p>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+            <div className="w-full bg-muted rounded-full h-2">
               <div
-                className="bg-blue-600 h-2 rounded-full transition-all"
+                className="bg-accent h-2 rounded-full transition-all"
                 style={{
                   width: `${
                     totalMessagesLimit > 0
@@ -134,99 +147,114 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
                 }}
               />
             </div>
-            <button className="text-blue-600 text-xs font-medium hover:underline">
-              Manage
+            <button className="text-accent text-xs font-semibold hover:underline">
+              Upgrade Plan
             </button>
           </div>
         </div>
 
-        {/* Footer Links */}
-        <div className="p-6 border-t border-gray-200 space-y-2 text-xs text-gray-600">
-          <p className="hover:text-gray-900 cursor-pointer">Knowledge base</p>
-          <p className="hover:text-gray-900 cursor-pointer">Contact Us</p>
+        <div className="p-6 border-t border-border space-y-2 text-xs text-muted-foreground">
+          <p className="hover:text-foreground cursor-pointer transition-colors">
+            Documentation
+          </p>
+          <p className="hover:text-foreground cursor-pointer transition-colors">
+            Contact Support
+          </p>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        {/* Page Content */}
+      <main className="flex-1 overflow-auto bg-background">
+        <div className="border-b border-border bg-background">
+          <div className="p-8">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
+              <div className="space-y-1">
+                <h1 className="text-3xl font-bold tracking-tight">
+                  AI Chatbots
+                </h1>
+                <p className="text-muted-foreground text-sm">
+                  Manage and test your AI chatbots
+                </p>
+              </div>
+              {selectedTab === "chatbots" && (
+                <Button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  disabled={chatbots.length >= 2}
+                  className="btn-accent gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Chatbot
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="p-8">
           <div className="max-w-6xl mx-auto">
-            {/* Chatbots Tab */}
             {selectedTab === "chatbots" && (
               <div>
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    AI chatbots
-                  </h2>
-                  <Button
-                    onClick={() => setIsCreateModalOpen(true)}
-                    disabled={chatbots.length >= 2}
-                    className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Create Chatbot
-                  </Button>
-                </div>
-
                 {chatbots.length > 0 ? (
-                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                  <div className="overflow-hidden rounded-lg border border-border">
                     <table className="w-full">
                       <thead>
-                        <tr className="bg-gray-50 border-b border-gray-200">
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                        <tr className="bg-muted border-b border-border">
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             Name
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
-                            Chatlogs
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Messages Used
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             Data Sources
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             Actions
                           </th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-border">
                         {chatbots.map((chatbot) => (
                           <tr
                             key={chatbot.id}
-                            className="border-b border-gray-200 hover:bg-gray-50 transition-colors"
+                            className="hover:bg-muted/50 transition-colors"
                           >
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                                  <MessageCircle className="w-5 h-5 text-blue-600" />
+                                <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                                  <MessageCircle className="w-5 h-5 text-accent" />
                                 </div>
                                 <div>
-                                  <p className="font-semibold text-gray-900">
+                                  <p className="font-semibold text-foreground">
                                     {chatbot.name}
                                   </p>
-                                  <p className="text-xs text-gray-500">
+                                  <p className="text-xs text-muted-foreground">
                                     {chatbot.tagline}
                                   </p>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-700">
-                              {chatbot.messageCount || 0}
+                            <td className="px-6 py-4 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className="text-foreground font-medium">
+                                  {chatbot.messageCount || 0}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  /20
+                                </span>
+                              </div>
                             </td>
                             <td className="px-6 py-4">
-                              <a
-                                href="#"
-                                className="text-blue-600 text-sm hover:underline"
-                              >
-                                1 URLs
-                              </a>
+                              <span className="text-accent text-sm font-medium">
+                                1 Website
+                              </span>
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-2">
                                 <Button
-                                  onClick={() => handleTestChatbot(chatbot.id)}
+                                  onClick={() => handleTestChatbot(chatbot)}
                                   variant="outline"
                                   size="sm"
-                                  className="text-xs border-gray-300 gap-1"
+                                  className="text-xs gap-1"
                                 >
                                   <Play className="w-3 h-3" />
                                   Test
@@ -235,20 +263,18 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
                                   onClick={() => handleOpenEditModal(chatbot)}
                                   variant="outline"
                                   size="sm"
-                                  className="text-xs border-gray-300"
+                                  className="text-xs"
                                 >
-                                  Edit
+                                  <Edit2 className="w-3 h-3" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
+                                <button
                                   onClick={() =>
                                     handleDeleteChatbot(chatbot.id)
                                   }
-                                  className="text-gray-400 hover:text-red-600 p-1 h-auto w-auto"
+                                  className="p-2 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4" />
-                                </Button>
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -257,18 +283,18 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
                     </table>
                   </div>
                 ) : (
-                  <Card className="p-12 text-center bg-gray-50 border-gray-200">
-                    <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                    <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                  <Card className="p-12 text-center bg-card border-border">
+                    <MessageCircle className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                    <h2 className="text-xl font-semibold text-foreground mb-2">
                       No chatbots yet
                     </h2>
-                    <p className="text-gray-600 mb-6">
+                    <p className="text-muted-foreground mb-6 max-w-xs mx-auto">
                       Create your first AI chatbot to get started. You can
                       create up to 2 chatbots per account.
                     </p>
                     <Button
                       onClick={() => setIsCreateModalOpen(true)}
-                      className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                      className="btn-accent gap-2 mx-auto"
                     >
                       <Plus className="w-4 h-4" />
                       Create Your First Chatbot
@@ -278,17 +304,19 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
               </div>
             )}
 
-            {/* Chatlogs Tab */}
             {selectedTab === "history" && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                  Chatlogs
+                <h2 className="text-2xl font-bold text-foreground mb-6">
+                  Chat History
                 </h2>
                 {chatbots.length > 0 ? (
                   <div className="space-y-4">
                     {chatbots.map((chatbot) => (
-                      <Card key={chatbot.id} className="p-6 border-gray-200">
-                        <h3 className="text-lg font-bold mb-4 text-gray-900">
+                      <Card
+                        key={chatbot.id}
+                        className="p-6 bg-card border-border"
+                      >
+                        <h3 className="text-lg font-semibold text-foreground mb-4">
                           {chatbot.name}
                         </h3>
                         <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -305,8 +333,8 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
                                 <div
                                   className={`max-w-xs px-4 py-2 rounded-lg text-sm ${
                                     msg.role === "user"
-                                      ? "bg-blue-100 text-blue-900"
-                                      : "bg-gray-100 text-gray-900"
+                                      ? "bg-accent text-accent-foreground"
+                                      : "bg-muted text-muted-foreground"
                                   }`}
                                 >
                                   {msg.content}
@@ -314,7 +342,7 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
                               </div>
                             ))
                           ) : (
-                            <p className="text-sm text-gray-500 text-center py-8">
+                            <p className="text-sm text-muted-foreground text-center py-8">
                               No messages yet
                             </p>
                           )}
@@ -323,42 +351,46 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
                     ))}
                   </div>
                 ) : (
-                  <Card className="p-12 text-center bg-gray-50 border-gray-200">
-                    <History className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      No chat history
+                  <Card className="p-12 text-center bg-card border-border">
+                    <History className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                    <h2 className="text-lg font-semibold text-foreground">
+                      No chat history yet
                     </h2>
                   </Card>
                 )}
               </div>
             )}
 
-            {/* Corrections Tab */}
             {selectedTab === "corrections" && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                <h2 className="text-2xl font-bold text-foreground mb-6">
                   Corrections
                 </h2>
-                <Card className="p-12 text-center bg-gray-50 border-gray-200">
-                  <Settings className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <h2 className="text-lg font-semibold text-gray-900">
+                <Card className="p-12 text-center bg-card border-border">
+                  <Settings className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                  <h2 className="text-lg font-semibold text-foreground">
                     Coming soon
                   </h2>
+                  <p className="text-muted-foreground text-sm mt-2">
+                    This feature will allow you to correct chatbot responses
+                  </p>
                 </Card>
               </div>
             )}
 
-            {/* Billing Tab */}
             {selectedTab === "billing" && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                <h2 className="text-2xl font-bold text-foreground mb-6">
                   Billing
                 </h2>
-                <Card className="p-12 text-center bg-gray-50 border-gray-200">
-                  <ShoppingCart className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <h2 className="text-lg font-semibold text-gray-900">
+                <Card className="p-12 text-center bg-card border-border">
+                  <ShoppingCart className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                  <h2 className="text-lg font-semibold text-foreground">
                     Coming soon
                   </h2>
+                  <p className="text-muted-foreground text-sm mt-2">
+                    Manage your subscription and billing here
+                  </p>
                 </Card>
               </div>
             )}
@@ -366,7 +398,6 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
         </div>
       </main>
 
-      {/* Modals */}
       <CreateChatbotModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -384,6 +415,13 @@ export default function ChatbotClientWrapper({ initialChatbots, userId }) {
           chatbot={selectedChatbotForEdit}
           userId={userId}
           onChatbotUpdated={handleChatbotUpdated}
+        />
+      )}
+
+      {testingChatbot && (
+        <FloatingChatWidget
+          chatbot={testingChatbot}
+          onClose={handleCloseTestWidget}
         />
       )}
     </div>

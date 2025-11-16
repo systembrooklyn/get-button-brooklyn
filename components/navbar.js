@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
-import { Moon, Sun, LogOut, MessageCircle, Menu, X } from "lucide-react";
+import { Moon, Sun, LogOut, MessageCircle } from "lucide-react";
 
-export default function Navbar() {
-  const [user, setUser] = useState(null);
+export default function Navbar({ user: initialUser }) {
+  const [user, setUser] = useState(initialUser);
   const [isDark, setIsDark] = useState(() => {
     if (typeof document === "undefined") return false;
     return document.documentElement.classList.contains("dark");
@@ -23,12 +23,16 @@ export default function Navbar() {
   useEffect(() => {
     const checkUser = async () => {
       const {
-        data: { user },
+        data: { user: currentUser },
       } = await supabase.auth.getUser();
-      setUser(user);
+      if (currentUser) {
+        setUser(currentUser);
+      }
     };
-    checkUser();
-  }, [supabase]);
+    if (mounted) {
+      checkUser();
+    }
+  }, [supabase, mounted]);
 
   const toggleTheme = useCallback(() => {
     const isDarkMode = document.documentElement.classList.toggle("dark");
@@ -38,6 +42,7 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    setUser(null);
     router.push("/login");
   };
 
