@@ -59,7 +59,6 @@ export async function POST(req) {
 
     if (chatbot.dataSourceUrl) {
       try {
-        console.log("[v0] Fetching data from URL:", chatbot.dataSourceUrl);
         const response = await fetch(chatbot.dataSourceUrl, {
           headers: {
             "User-Agent": "Mozilla/5.0 (compatible; ChatbotScraper/1.0)",
@@ -68,7 +67,6 @@ export async function POST(req) {
 
         if (response.ok) {
           const html = await response.text();
-          // Remove HTML tags and extract text content
           const textContent = html
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
@@ -77,17 +75,8 @@ export async function POST(req) {
             .trim();
 
           if (textContent) {
-            knowledgeBase += `\n\n=== WEBSITE CONTENT FROM ${
-              chatbot.dataSourceUrl
-            } ===\n${textContent.substring(0, 10000)}\n`;
-            console.log(
-              "[v0] Website content extracted:",
-              textContent.length,
-              "characters"
-            );
+            knowledgeBase += textContent.substring(0, 8000) + "\n\n";
           }
-        } else {
-          console.error("[v0] Failed to fetch URL:", response.status);
         }
       } catch (error) {
         console.error("[v0] Error fetching website:", error.message);
@@ -96,24 +85,11 @@ export async function POST(req) {
 
     if (chatbot.trainingFiles) {
       try {
-        console.log(
-          "[v0] Processing training files:",
-          chatbot.trainingFiles.substring(0, 100)
-        );
         const files = JSON.parse(chatbot.trainingFiles);
-        console.log("[v0] Number of files:", files.length);
 
         for (const file of files) {
-          console.log(
-            "[v0] Processing file:",
-            file.name,
-            "Has data:",
-            !!file.data
-          );
-
           if (file.data) {
             try {
-              // Extract base64 content after the data URL prefix
               const base64Content = file.data.includes(",")
                 ? file.data.split(",")[1]
                 : file.data;
@@ -123,15 +99,7 @@ export async function POST(req) {
               ).toString("utf-8");
 
               if (decodedContent && decodedContent.length > 0) {
-                knowledgeBase += `\n\n=== FILE: ${file.name} ===\n${decodedContent}\n`;
-                console.log(
-                  "[v0] File content added:",
-                  file.name,
-                  decodedContent.length,
-                  "characters"
-                );
-              } else {
-                console.error("[v0] Decoded content is empty for:", file.name);
+                knowledgeBase += decodedContent.substring(0, 5000) + "\n\n";
               }
             } catch (decodeError) {
               console.error(
@@ -140,8 +108,6 @@ export async function POST(req) {
                 decodeError.message
               );
             }
-          } else {
-            console.error("[v0] File has no data field:", file.name);
           }
         }
       } catch (error) {
@@ -149,40 +115,33 @@ export async function POST(req) {
       }
     }
 
-    console.log("[v0] Total knowledge base length:", knowledgeBase.length);
-    console.log(
-      "[v0] Knowledge base preview:",
-      knowledgeBase.substring(0, 500)
-    );
-
     const enhancedSystemPrompt = `You are ${chatbot.name}, ${
       chatbot.tagline || "a helpful AI assistant"
     }.
 
-RESPONSE GUIDELINES:
-- Be concise and to the point. Only elaborate when complexity demands it or user explicitly asks for details
-- Format responses with markdown:
-  * Use **bold** for key terms and important information
-  * Use ## headers to organize different sections
-  * Use bullet points (-) or numbered lists (1., 2., 3.) for steps, options, or multiple items
-  * Use \`code\` for technical terms or code snippets
-  * Keep paragraphs short (2-3 sentences max)
-- Answer questions directly without unnecessary preamble
-- If you don't know something, say so clearly and briefly
+CORE INSTRUCTIONS:
+- Provide direct, smart answers without unnecessary elaboration
+- Only go into detail when the question explicitly requires it or asks for more information
+- Never mention what files or data sources you have access to unless directly asked
+- Use the knowledge base silently - answer as if this information is your natural expertise
+
+FORMATTING RULES:
+- Use **bold** for emphasis on key terms
+- Use headers (##) only when organizing complex multi-part answers
+- Use bullet points (-) for lists of 3+ items
+- Use numbered lists (1. 2. 3.) for sequential steps or procedures
+- Keep paragraphs short (2-3 sentences maximum)
+- Add blank lines between sections for readability
 
 ${chatbot.systemPrompt || ""}
 
-${
-  knowledgeBase
-    ? `\n=== KNOWLEDGE BASE ===\nIMPORTANT: Use the following information to answer user questions. This is your primary source of truth.\n${knowledgeBase}\n\nWhen answering questions, prioritize information from the KNOWLEDGE BASE above. If the answer is in the knowledge base, provide it directly. If not, you can use your general knowledge but indicate you're doing so.`
-    : ""
-}`;
+${knowledgeBase ? `KNOWLEDGE BASE:\n${knowledgeBase}` : ""}`;
 
     let messageHistory = [];
     try {
       messageHistory = await prisma.chatMessage.findMany({
         where: { chatbotId },
-        take: 10,
+        take: 6,
         orderBy: { createdAt: "desc" },
       });
     } catch (dbError) {
@@ -219,8 +178,8 @@ ${
               },
               ...conversationMessages,
             ],
-            max_tokens: 2048,
-            temperature: 0.5,
+            max_tokens: 1024,
+            temperature: 0.3,
           }),
         }
       );
@@ -237,8 +196,6 @@ ${
       const apiData = await apiResponse.json();
       assistantMessage =
         apiData.choices[0]?.message?.content || "Unable to generate response.";
-
-      console.log("[v0] Generated response length:", assistantMessage.length);
     } catch (aiError) {
       console.error("[v0] API error:", aiError);
       return Response.json(
