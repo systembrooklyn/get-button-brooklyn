@@ -57,6 +57,7 @@ export async function POST(req) {
 
     let knowledgeBase = "";
 
+    // Fetch website data
     if (chatbot.dataSourceUrl) {
       try {
         const response = await fetch(chatbot.dataSourceUrl, {
@@ -76,6 +77,10 @@ export async function POST(req) {
 
           if (textContent) {
             knowledgeBase += textContent.substring(0, 8000) + "\n\n";
+            console.log(
+              "[v0] Website content fetched:",
+              textContent.substring(0, 100) + "..."
+            );
           }
         }
       } catch (error) {
@@ -83,6 +88,7 @@ export async function POST(req) {
       }
     }
 
+    // Process training files
     if (chatbot.trainingFiles) {
       try {
         const files = JSON.parse(chatbot.trainingFiles);
@@ -100,6 +106,11 @@ export async function POST(req) {
 
               if (decodedContent && decodedContent.length > 0) {
                 knowledgeBase += decodedContent.substring(0, 5000) + "\n\n";
+                console.log(
+                  "[v0] File content extracted:",
+                  file.name,
+                  decodedContent.substring(0, 100) + "..."
+                );
               }
             } catch (decodeError) {
               console.error(
@@ -115,6 +126,8 @@ export async function POST(req) {
       }
     }
 
+    console.log("[v0] Total knowledge base length:", knowledgeBase.length);
+
     const enhancedSystemPrompt = `You are ${chatbot.name}, ${
       chatbot.tagline || "a helpful AI assistant"
     }.
@@ -122,8 +135,10 @@ export async function POST(req) {
 CORE INSTRUCTIONS:
 - Provide direct, smart answers without unnecessary elaboration
 - Only go into detail when the question explicitly requires it or asks for more information
-- Never mention what files or data sources you have access to unless directly asked
-- Use the knowledge base silently - answer as if this information is your natural expertise
+- NEVER mention that you have access to files, documents, or data sources
+- NEVER list or describe what information you have access to
+- Answer naturally as if the knowledge is your inherent expertise
+- Only reference specific information when directly relevant to answering the user's question
 
 FORMATTING RULES:
 - Use **bold** for emphasis on key terms
@@ -135,7 +150,11 @@ FORMATTING RULES:
 
 ${chatbot.systemPrompt || ""}
 
-${knowledgeBase ? `KNOWLEDGE BASE:\n${knowledgeBase}` : ""}`;
+${
+  knowledgeBase
+    ? `REFERENCE INFORMATION (use silently, never mention):\n${knowledgeBase}`
+    : ""
+}`;
 
     let messageHistory = [];
     try {
