@@ -23,11 +23,65 @@ export async function createChatbot(data) {
     systemPrompt,
     dataSourceUrl,
     avatar,
+    botLanguage,
+    suggestedMessages,
+    sendMessageText,
+    trainingFiles,
   } = data;
 
   if (!name || !tagline || !greetingMessage || !systemPrompt) {
     throw new Error("Missing required fields");
   }
+
+  let scrapedContent = "";
+  if (dataSourceUrl) {
+    try {
+      console.log("[v0] Scraping website:", dataSourceUrl);
+      const { scrapeWebsite } = await import("./scraper-actions.js");
+      scrapedContent = await scrapeWebsite(dataSourceUrl);
+      console.log("[v0] Scraped content length:", scrapedContent.length);
+    } catch (error) {
+      console.error("[v0] Error scraping website:", error);
+    }
+  }
+
+  let trainingContent = "";
+  if (trainingFiles) {
+    try {
+      const files = JSON.parse(trainingFiles);
+      for (const file of files) {
+        if (file.content) {
+          // Decode base64 content
+          const decodedContent = Buffer.from(
+            file.content.split(",")[1],
+            "base64"
+          ).toString("utf-8");
+          trainingContent += `\n\nFile: ${file.name}\n${decodedContent}\n`;
+        }
+      }
+      console.log("[v0] Training content length:", trainingContent.length);
+    } catch (error) {
+      console.error("[v0] Error parsing training files:", error);
+    }
+  }
+
+  const knowledgeBase = `${scrapedContent}${trainingContent}`;
+  const enhancedSystemPrompt = knowledgeBase
+    ? `${systemPrompt}
+
+IMPORTANT INSTRUCTIONS:
+- Be concise and direct. Only provide detailed explanations when specifically requested or when the complexity requires it.
+- Format your responses using markdown for better readability:
+  * Use **bold** for important terms
+  * Use headers (##, ###) to organize sections
+  * Use bullet points (-) or numbered lists (1., 2.) for steps or items
+  * Use code blocks (\`\`\`) for code or technical content
+  * Keep paragraphs short and well-spaced
+- Prioritize clarity over verbosity.
+
+KNOWLEDGE BASE:
+${knowledgeBase}`
+    : systemPrompt;
 
   const chatbot = await prisma.chatbot.create({
     data: {
@@ -35,9 +89,13 @@ export async function createChatbot(data) {
       name,
       tagline,
       greetingMessage,
-      systemPrompt,
+      systemPrompt: enhancedSystemPrompt,
       dataSourceUrl: dataSourceUrl || "",
       avatar: avatar || "",
+      botLanguage: botLanguage || "en",
+      suggestedMessages: suggestedMessages || "",
+      sendMessageText: sendMessageText || "Send",
+      trainingFiles: trainingFiles || "",
     },
     include: {
       messages: true,
@@ -47,14 +105,14 @@ export async function createChatbot(data) {
   return chatbot;
 }
 
-export async function getChatbotByUserId(userid) {
-  if (!userid) {
+export async function getChatbotByUserId(userId) {
+  if (!userId) {
     throw new Error("User ID is required");
   }
 
   const chatbots = await prisma.chatbot.findMany({
     where: {
-      userId: userid,
+      userId,
     },
     include: {
       messages: true,
@@ -94,7 +152,6 @@ export async function updateChatbot(chatbotId, data) {
     throw new Error("User not authenticated");
   }
 
-  // Verify the chatbot belongs to the user
   const chatbot = await prisma.chatbot.findUnique({
     where: { id: chatbotId },
   });
@@ -104,19 +161,55 @@ export async function updateChatbot(chatbotId, data) {
   }
 
   if (chatbot.userId !== user.id) {
-    throw new Error("Unauthorized: You do not own this chatbot");
+    throw new Error("Unauthorized");
   }
 
-  const { name, tagline, greetingMessage, systemPrompt, avatar } = data;
+  let updatedSystemPrompt = data.systemPrompt;
+  if (data.dataSourceUrl && data.dataSourceUrl !== chatbot.dataSourceUrl) {
+    try {
+      console.log("[v0] Scraping updated website:", data.dataSourceUrl);
+      const { scrapeWebsite } = await import("./scraper-actions.js");
+      const scrapedContent = await scrapeWebsite(data.dataSourceUrl);
+      console.log("[v0] Scraped content length:", scrapedContent.length);
+
+      updatedSystemPrompt = `${data.systemPrompt || chatbot.systemPrompt}
+
+IMPORTANT INSTRUCTIONS:
+- Be concise and direct. Only provide detailed explanations when specifically requested or when the complexity requires it.
+- Format your responses using markdown for better readability:
+  * Use **bold** for important terms
+  * Use headers (##, ###) to organize sections
+  * Use bullet points (-) or numbered lists (1., 2.) for steps or items
+  * Use code blocks (\`\`\`) for code or technical content
+  * Keep paragraphs short and well-spaced
+- Prioritize clarity over verbosity.
+
+KNOWLEDGE BASE:
+${scrapedContent}`;
+    } catch (error) {
+      console.error("[v0] Error scraping website during update:", error);
+    }
+  }
 
   const updatedChatbot = await prisma.chatbot.update({
     where: { id: chatbotId },
     data: {
-      ...(name && { name }),
-      ...(tagline && { tagline }),
-      ...(greetingMessage && { greetingMessage }),
-      ...(systemPrompt && { systemPrompt }),
-      ...(avatar && { avatar }),
+      ...(data.name && { name: data.name }),
+      ...(data.tagline && { tagline: data.tagline }),
+      ...(data.greetingMessage && { greetingMessage: data.greetingMessage }),
+      ...(updatedSystemPrompt && { systemPrompt: updatedSystemPrompt }),
+      ...(data.avatar !== undefined && { avatar: data.avatar }),
+      ...(data.dataSourceUrl !== undefined && {
+        dataSourceUrl: data.dataSourceUrl,
+      }),
+      ...(data.botLanguage && { botLanguage: data.botLanguage }),
+      ...(data.suggestedMessages !== undefined && {
+        suggestedMessages: data.suggestedMessages,
+      }),
+      ...(data.sendMessageText && { sendMessageText: data.sendMessageText }),
+      ...(data.trainingFiles !== undefined && {
+        trainingFiles: data.trainingFiles,
+      }),
     },
     include: {
       messages: true,
@@ -136,7 +229,6 @@ export async function deleteChatbot(chatbotId) {
     throw new Error("User not authenticated");
   }
 
-  // Verify the chatbot belongs to the user
   const chatbot = await prisma.chatbot.findUnique({
     where: { id: chatbotId },
   });
@@ -146,7 +238,7 @@ export async function deleteChatbot(chatbotId) {
   }
 
   if (chatbot.userId !== user.id) {
-    throw new Error("Unauthorized: You do not own this chatbot");
+    throw new Error("Unauthorized");
   }
 
   await prisma.chatbot.delete({

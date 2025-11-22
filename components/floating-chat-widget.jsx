@@ -235,7 +235,26 @@ export function FloatingChatWidget({ chatbot, onClose }) {
                     : "bg-muted text-muted-foreground rounded-bl-none border border-border/50 shadow-sm"
                 }`}
               >
-                {msg.content}
+                {msg.role === "assistant" ? (
+                  <div
+                    className="prose prose-sm max-w-none dark:prose-invert prose-headings:mt-2 prose-headings:mb-1 prose-p:my-1 prose-ul:my-1 prose-ol:my-1"
+                    dangerouslySetInnerHTML={{
+                      __html: msg.content
+                        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+                        .replace(/^### (.*$)/gim, "<h3>$1</h3>")
+                        .replace(/^## (.*$)/gim, "<h2>$1</h2>")
+                        .replace(/^# (.*$)/gim, "<h1>$1</h1>")
+                        .replace(/^- (.*$)/gim, "<li>$1</li>")
+                        .replace(/^\d+\. (.*$)/gim, "<li>$1</li>")
+                        .replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>")
+                        .replace(/```(.*?)```/gs, "<pre><code>$1</code></pre>")
+                        .replace(/`(.*?)`/g, "<code>$1</code>")
+                        .replace(/\n/g, "<br>"),
+                    }}
+                  />
+                ) : (
+                  msg.content
+                )}
               </div>
             </div>
           ))}

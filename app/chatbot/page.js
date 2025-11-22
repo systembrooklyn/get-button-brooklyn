@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { getChatbotByUserId } from "@/app/actions/chatbot-actions";
+import { getButtonsByUserId } from "@/app/actions/button-actions";
 import ChatbotClientWrapper from "@/components/chatbot-client-wrapper";
 
 export default async function ChatbotPage() {
@@ -14,6 +15,7 @@ export default async function ChatbotPage() {
   }
 
   const chatbots = await getChatbotByUserId(user.id);
+  const buttons = await getButtonsByUserId(user.id);
 
   const formattedChatbots = (chatbots || []).map((chatbot) => ({
     ...chatbot,
@@ -23,6 +25,7 @@ export default async function ChatbotPage() {
   return (
     <ChatbotClientWrapper
       initialChatbots={formattedChatbots}
+      initialButtons={buttons || []}
       userId={user.id}
     />
   );

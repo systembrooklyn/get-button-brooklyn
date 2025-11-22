@@ -1,40 +1,59 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = []
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id        String     @id
-  email     String     @unique
+  id        String    @id
+  email     String    @unique
   chatbots  Chatbot[]
-  createdAt DateTime   @default(now()) @map("createdAt")
-  updatedAt DateTime   @updatedAt @map("updatedAt")
+  buttons   Button[]
+  createdAt DateTime  @default(now()) @map("createdAt")
+  updatedAt DateTime  @updatedAt @map("updatedAt")
 
   @@map("users")
 }
 
+model Button {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform  String
+  contact   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("createdAt")
+  updatedAt DateTime @updatedAt @map("updatedAt")
+
+  @@index([userId])
+  @@map("buttons")
+}
+
 model Chatbot {
-  id               String   @id @default(cuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name             String
-  tagline          String   @default("")
-  greetingMessage  String   @default("Hello! How can I help?")
-  avatar           String   @default("")
-  systemPrompt     String   @db.Text
-  dataSourceUrl    String   @default("")
-  messageCount     Int      @default(0)
-  messagesLimit    Int      @default(20)
-  isActive         Boolean  @default(true)
-  messages         ChatMessage[]
-  createdAt        DateTime @default(now()) @map("createdAt")
-  updatedAt        DateTime @updatedAt @map("updatedAt")
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String
+  tagline           String        @default("")
+  greetingMessage   String        @default("Hello! How can I help?")
+  avatar            String        @default("")
+  systemPrompt      String        @db.Text
+  dataSourceUrl     String        @default("")
+  botLanguage       String        @default("en")
+  suggestedMessages String        @default("") @db.Text
+  sendMessageText   String        @default("Send")
+  trainingFiles     String        @default("") @db.Text
+  messageCount      Int           @default(0)
+  messagesLimit     Int           @default(20)
+  isActive          Boolean       @default(true)
+  messages          ChatMessage[]
+  createdAt         DateTime      @default(now()) @map("createdAt")
+  updatedAt         DateTime      @updatedAt @map("updatedAt")
 
   @@index([userId])
   @@map("chatbots")
