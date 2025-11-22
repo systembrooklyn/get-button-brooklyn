@@ -34,18 +34,17 @@ export async function middleware(request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (request.nextUrl.pathname === "/") {
-    if (!user) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-    return NextResponse.redirect(new URL("/profile", request.url));
+  if (!user && request.nextUrl.pathname.startsWith("/chatbot")) {
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect unauthenticated users to login
+  // Redirect unauthenticated users to login for protected routes (except home, login, signup)
   if (
     !user &&
     !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/signup")
+    !request.nextUrl.pathname.startsWith("/signup") &&
+    !request.nextUrl.pathname.startsWith("/chatbot") &&
+    request.nextUrl.pathname !== "/"
   ) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
