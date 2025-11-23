@@ -2,21 +2,16 @@ import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req) {
-  let supabase = null;
-
   try {
-    supabase = await createClient();
+    const supabase = await createClient();
 
+    // Authenticate user for security
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await req.json();
-    const { message, chatbotId } = body;
+    const { message, chatbotId, sessionId } = body;
 
     if (!message || !chatbotId) {
       return Response.json(
@@ -25,20 +20,16 @@ export async function POST(req) {
       );
     }
 
+    // 1. Fetch Chatbot Data using Prisma
     let chatbot;
     try {
-      chatbot = await prisma.chatbot.findFirst({
-        where: {
-          id: chatbotId,
-          userId: user.id,
-        },
+      chatbot = await prisma.chatbot.findUnique({
+        where: { id: chatbotId },
       });
-
-      console.log("[v0] Chatbot found:", chatbot?.name);
     } catch (dbError) {
       console.error("[v0] Database error fetching chatbot:", dbError);
       return Response.json(
-        { error: "Failed to fetch chatbot" },
+        { error: "Failed to fetch chatbot configuration" },
         { status: 500 }
       );
     }
@@ -47,7 +38,7 @@ export async function POST(req) {
       return Response.json({ error: "Chatbot not found" }, { status: 404 });
     }
 
-    // Check message limit
+    // 2. Check Limits
     if (chatbot.messageCount >= chatbot.messagesLimit) {
       return Response.json(
         { error: "Message limit reached. Please upgrade to continue." },
@@ -55,117 +46,91 @@ export async function POST(req) {
       );
     }
 
-    let knowledgeBase = "";
+    // 3. Prepare Personality Instruction
+    const personalityMap = {
+      friendly:
+        "You are a friendly, enthusiastic, and warm assistant. Use emojis occasionally and keep the tone welcoming.",
+      professional:
+        "You are a formal, corporate, and professional assistant. Maintain a polite and respectful tone at all times. Avoid slang.",
+      direct:
+        "You are a direct and concise assistant. Provide short, accurate answers without unnecessary fluff or pleasantries.",
+      empathetic:
+        "You are a caring and supportive assistant. Validate the user's feelings and provide empathetic responses.",
+      humorous:
+        "You are a witty and lighthearted assistant. Feel free to use appropriate humor and jokes while being helpful.",
+    };
 
-    // Fetch website data
-    if (chatbot.dataSourceUrl) {
-      try {
-        const response = await fetch(chatbot.dataSourceUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; ChatbotScraper/1.0)",
-          },
-        });
+    const personalityInstruction =
+      personalityMap[chatbot.personality] || personalityMap.friendly;
 
-        if (response.ok) {
-          const html = await response.text();
-          const textContent = html
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
+    // 4. Build Knowledge Base / File Context
+    let fileContext = "";
+    const trainingData = chatbot.trainingFiles
+      ? JSON.parse(chatbot.trainingFiles)
+      : [];
 
-          if (textContent) {
-            knowledgeBase += textContent.substring(0, 8000) + "\n\n";
-            console.log(
-              "[v0] Website content fetched:",
-              textContent.substring(0, 100) + "..."
-            );
+    // Limit file context to avoid token overflow
+    const MAX_FILE_CONTEXT = 25000;
+
+    for (const file of trainingData) {
+      if (file.data && fileContext.length < MAX_FILE_CONTEXT) {
+        try {
+          const content = file.data.includes(",")
+            ? file.data.split(",")[1]
+            : file.data;
+          const text = Buffer.from(content, "base64").toString("utf-8");
+          // Rigorous cleanup for potential binary files read as text
+          const cleanText = text.replace(
+            /[^\x20-\x7E\n\r\t\u00A0-\uFFFF]/g,
+            " "
+          );
+
+          // Only add if it looks like meaningful text
+          if (cleanText.length > 50) {
+            fileContext += `\n\n--- SOURCE DOCUMENT: ${
+              file.name
+            } ---\n${cleanText.substring(0, 8000)}\n`;
           }
+        } catch (e) {
+          console.warn("Failed to process file context for", file.name);
         }
-      } catch (error) {
-        console.error("[v0] Error fetching website:", error.message);
       }
     }
 
-    // Process training files
-    if (chatbot.trainingFiles) {
-      try {
-        const files = JSON.parse(chatbot.trainingFiles);
+    // 5. Construct the System Prompt
+    const currentSystemPrompt = `
+You are ${chatbot.name}, ${chatbot.tagline || "an intelligent AI assistant"}.
 
-        for (const file of files) {
-          if (file.data) {
-            try {
-              const base64Content = file.data.includes(",")
-                ? file.data.split(",")[1]
-                : file.data;
-              const decodedContent = Buffer.from(
-                base64Content,
-                "base64"
-              ).toString("utf-8");
+## YOUR PERSONALITY
+${personalityInstruction}
 
-              if (decodedContent && decodedContent.length > 0) {
-                knowledgeBase += decodedContent.substring(0, 5000) + "\n\n";
-                console.log(
-                  "[v0] File content extracted:",
-                  file.name,
-                  decodedContent.substring(0, 100) + "..."
-                );
-              }
-            } catch (decodeError) {
-              console.error(
-                "[v0] Error decoding file:",
-                file.name,
-                decodeError.message
-              );
-            }
-          }
-        }
-      } catch (error) {
-        console.error("[v0] Error processing training files:", error.message);
-      }
-    }
+## CORE INSTRUCTIONS
+- **Language Detection**: Detect the language of the user's message and ALWAYS reply in the SAME language.
+- **Arabic Handling**: If replying in Arabic, use clear, modern standard Arabic (Fusha) or a professional dialect.
+- **Formatting**: Use Markdown to make your answers structured (Bold key terms, use Bullet points for lists).
+- **External Links**: If you find a URL in the context, present it clearly (e.g., https://example.com) so it is clickable.
+- **Knowledge Base**: Use the context below to answer questions. If the answer is NOT in the context, politely say you don't have that information.
 
-    console.log("[v0] Total knowledge base length:", knowledgeBase.length);
-
-    const enhancedSystemPrompt = `You are ${chatbot.name}, ${
-      chatbot.tagline || "a helpful AI assistant"
-    }.
-
-CORE INSTRUCTIONS:
-- Provide direct, smart answers without unnecessary elaboration
-- Only go into detail when the question explicitly requires it or asks for more information
-- NEVER mention that you have access to files, documents, or data sources
-- NEVER list or describe what information you have access to
-- Answer naturally as if the knowledge is your inherent expertise
-- Only reference specific information when directly relevant to answering the user's question
-
-FORMATTING RULES:
-- Use **bold** for emphasis on key terms
-- Use headers (##) only when organizing complex multi-part answers
-- Use bullet points (-) for lists of 3+ items
-- Use numbered lists (1. 2. 3.) for sequential steps or procedures
-- Keep paragraphs short (2-3 sentences maximum)
-- Add blank lines between sections for readability
-
+## CUSTOM INSTRUCTIONS
 ${chatbot.systemPrompt || ""}
 
-${
-  knowledgeBase
-    ? `REFERENCE INFORMATION (use silently, never mention):\n${knowledgeBase}`
-    : ""
-}`;
+${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
+`;
 
+    // 6. Fetch History (Filtered by Session ID if possible, or just general history for context window)
+    // We only want the history for THIS session to avoid mixing conversations
     let messageHistory = [];
     try {
       messageHistory = await prisma.chatMessage.findMany({
-        where: { chatbotId },
-        take: 6,
+        where: {
+          chatbotId,
+          sessionId: sessionId || "anonymous",
+        },
+        take: 10,
         orderBy: { createdAt: "desc" },
       });
     } catch (dbError) {
       console.error("[v0] Error fetching message history:", dbError);
-      messageHistory = [];
     }
 
     const conversationMessages = messageHistory.reverse().map((msg) => ({
@@ -178,6 +143,7 @@ ${
       content: message,
     });
 
+    // 7. Call LLM (Groq)
     let assistantMessage;
     try {
       const apiResponse = await fetch(
@@ -193,75 +159,68 @@ ${
             messages: [
               {
                 role: "system",
-                content: enhancedSystemPrompt,
+                content: currentSystemPrompt,
               },
               ...conversationMessages,
             ],
-            max_tokens: 1024,
-            temperature: 0.3,
+            max_tokens: 1500,
+            temperature: 0.7,
+            top_p: 0.9,
           }),
         }
       );
 
       if (!apiResponse.ok) {
         const error = await apiResponse.json();
-        console.error("[v0] API error:", error);
-        return Response.json(
-          { error: "Failed to generate response" },
-          { status: 500 }
-        );
+        console.error("[v0] Groq API error:", error);
+        throw new Error("AI Service Unavailable");
       }
 
       const apiData = await apiResponse.json();
       assistantMessage =
-        apiData.choices[0]?.message?.content || "Unable to generate response.";
+        apiData.choices[0]?.message?.content ||
+        "I apologize, I couldn't generate a response.";
     } catch (aiError) {
-      console.error("[v0] API error:", aiError);
+      console.error("[v0] AI Generation error:", aiError);
       return Response.json(
-        { error: "Failed to generate response" },
+        { error: "Failed to process request." },
         { status: 500 }
       );
     }
 
-    try {
-      await prisma.chatMessage.create({
+    // 8. Save Transaction
+    // Use sessionId to group messages
+    const currentSessionId = sessionId || `session_${Date.now()}`;
+
+    await Promise.allSettled([
+      prisma.chatMessage.create({
         data: {
           chatbotId,
           role: "user",
           content: message,
+          sessionId: currentSessionId,
         },
-      });
-    } catch (dbError) {
-      console.error("[v0] Error saving user message:", dbError);
-    }
-
-    try {
-      await prisma.chatMessage.create({
+      }),
+      prisma.chatMessage.create({
         data: {
           chatbotId,
           role: "assistant",
           content: assistantMessage,
+          sessionId: currentSessionId,
         },
-      });
-    } catch (dbError) {
-      console.error("[v0] Error saving assistant message:", dbError);
-    }
-
-    try {
-      await prisma.chatbot.update({
+      }),
+      prisma.chatbot.update({
         where: { id: chatbotId },
         data: { messageCount: { increment: 2 } },
-      });
-    } catch (dbError) {
-      console.error("[v0] Error updating message count:", dbError);
-    }
+      }),
+    ]);
 
-    return Response.json({ message: assistantMessage });
+    return Response.json({
+      message: assistantMessage,
+      sessionId: currentSessionId,
+    });
   } catch (error) {
-    console.error("[v0] Chat API error:", error);
-    return Response.json(
-      { error: "Failed to process message" },
-      { status: 500 }
-    );
+    console.error("[v0] Uncaught Chat API error:", error);
+    return Response.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

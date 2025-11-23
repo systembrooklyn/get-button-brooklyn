@@ -1,42 +1,45 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { X, Send, AlertCircle, CreditCard, Zap } from "lucide-react";
+import { X, Send, AlertCircle, CreditCard, Zap, RefreshCw } from "lucide-react";
+
+// Helper to detect if text is predominantly RTL
+const isRTL = (text) => {
+  if (!text) return false;
+  const rtlRegex = /[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/;
+  return rtlRegex.test(text);
+};
+
+// Helper to convert URLs to clickable links
+const linkify = (text) => {
+  if (!text) return "";
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return text.replace(urlRegex, (url) => {
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="underline decoration-1 underline-offset-2 hover:opacity-80 break-all font-semibold text-accent-foreground/90">${url}</a>`;
+  });
+};
 
 export function FloatingChatWidget({ chatbot, onClose }) {
+  const [sessionId, setSessionId] = useState("");
+
   const [messages, setMessages] = useState(() => {
-    if (typeof window === "undefined") {
-      return [
-        {
-          id: 1,
-          role: "assistant",
-          content:
-            chatbot?.greetingMessage || "Hello! How can I help you today?",
-        },
-      ];
-    }
+    if (typeof window === "undefined") return [];
+
+    const initialMsg = {
+      id: 1,
+      role: "assistant",
+      content: chatbot?.greetingMessage || "Hello! How can I help you today?",
+    };
+
     const saved = localStorage.getItem(`chat_${chatbot?.id}`);
     if (saved) {
       try {
         return JSON.parse(saved);
       } catch {
-        return [
-          {
-            id: 1,
-            role: "assistant",
-            content:
-              chatbot?.greetingMessage || "Hello! How can I help you today?",
-          },
-        ];
+        return [initialMsg];
       }
     }
-    return [
-      {
-        id: 1,
-        role: "assistant",
-        content: chatbot?.greetingMessage || "Hello! How can I help you today?",
-      },
-    ];
+    return [initialMsg];
   });
 
   const [input, setInput] = useState("");
@@ -44,6 +47,23 @@ export function FloatingChatWidget({ chatbot, onClose }) {
   const [error, setError] = useState("");
   const [showBilling, setShowBilling] = useState(false);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const accentColor = chatbot?.color || "#2563eb";
+
+  // Initialize Session ID
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      let storedSession = localStorage.getItem(`session_${chatbot?.id}`);
+      if (!storedSession) {
+        storedSession = `sess_${Math.random()
+          .toString(36)
+          .substr(2, 9)}_${Date.now()}`;
+        localStorage.setItem(`session_${chatbot?.id}`, storedSession);
+      }
+      setSessionId(storedSession);
+    }
+  }, [chatbot?.id]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -51,30 +71,40 @@ export function FloatingChatWidget({ chatbot, onClose }) {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, loading]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(`chat_${chatbot?.id}`, JSON.stringify(messages));
+    if (typeof window !== "undefined" && chatbot?.id) {
+      localStorage.setItem(`chat_${chatbot.id}`, JSON.stringify(messages));
     }
   }, [messages, chatbot?.id]);
 
+  useEffect(() => {
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+  }, []);
+
   const renderAvatar = (size = "md") => {
     const sizeClass = size === "sm" ? "w-8 h-8" : "w-10 h-10";
-    if (chatbot?.avatar?.startsWith("data:image")) {
+    if (
+      chatbot?.avatar?.startsWith("data:image") ||
+      chatbot?.avatar?.startsWith("http")
+    ) {
       return (
         <img
-          src={chatbot.avatar || "/placeholder.svg"}
+          src={chatbot.avatar}
           alt={chatbot?.name}
-          className={`${sizeClass} rounded-full object-cover border-2 border-accent shadow-md`}
+          className={`${sizeClass} rounded-full object-cover border border-white/20 shadow-sm bg-white`}
         />
       );
     }
     return (
       <div
-        className={`${sizeClass} rounded-full bg-gradient-to-br from-accent to-accent/70 text-accent-foreground flex items-center justify-center font-bold text-sm shadow-md`}
+        className={`${sizeClass} rounded-full flex items-center justify-center font-bold text-sm shadow-sm text-white`}
+        style={{ backgroundColor: accentColor }}
       >
-        {chatbot?.name?.charAt(0)?.toUpperCase()}
+        {chatbot?.name?.charAt(0)?.toUpperCase() || "A"}
       </div>
     );
   };
@@ -83,12 +113,13 @@ export function FloatingChatWidget({ chatbot, onClose }) {
     if (!input.trim() || loading) return;
 
     const userMessage = {
-      id: messages.length + 1,
+      id: Date.now(),
       role: "user",
       content: input,
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = input;
     setInput("");
     setLoading(true);
     setError("");
@@ -96,41 +127,50 @@ export function FloatingChatWidget({ chatbot, onClose }) {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: input,
+          message: currentInput,
           chatbotId: chatbot?.id,
+          sessionId: sessionId,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to send message");
+        throw new Error("Failed to send message");
       }
 
       const data = await response.json();
-
       const assistantMessage = {
-        id: messages.length + 2,
+        id: Date.now() + 1,
         role: "assistant",
         content: data.message || "Unable to generate response.",
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
-      console.error("[v0] Error sending message:", err);
-      setError(err.message || "Failed to send message. Please try again.");
-
-      const errorMessage = {
-        id: messages.length + 2,
-        role: "assistant",
-        content: `I encountered an error: ${err.message}. Please try again.`,
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setError("Failed to send. Please retry.");
+      setInput(currentInput);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClearChat = () => {
+    if (confirm("Start a new conversation?")) {
+      // Regenerate Session ID for a clean slate on backend logs too
+      const newSessionId = `sess_${Math.random()
+        .toString(36)
+        .substr(2, 9)}_${Date.now()}`;
+      localStorage.setItem(`session_${chatbot?.id}`, newSessionId);
+      setSessionId(newSessionId);
+
+      const initialMsg = {
+        id: Date.now(),
+        role: "assistant",
+        content: chatbot?.greetingMessage || "Hello! How can I help you today?",
+      };
+      setMessages([initialMsg]);
+      localStorage.removeItem(`chat_${chatbot?.id}`);
     }
   };
 
@@ -138,59 +178,94 @@ export function FloatingChatWidget({ chatbot, onClose }) {
   const messagesLimit = chatbot?.messagesLimit || 20;
   const isNearLimit = messageCount >= messagesLimit;
 
+  // Render message with link detection and markdown support
+  const renderMessageContent = (content) => {
+    let processed = linkify(content);
+
+    processed = processed
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/__(.*?)__/g, "<u>$1</u>")
+      .replace(/^### (.*$)/gim, "<h3 class='font-bold text-sm my-1'>$1</h3>")
+      .replace(/^## (.*$)/gim, "<h2 class='font-bold text-base my-2'>$1</h2>")
+      .replace(/^- (.*$)/gim, "<li class='ml-4'>$1</li>")
+      .replace(/^\d+\. (.*$)/gim, "<li class='ml-4 list-decimal'>$1</li>")
+      .replace(/\n/g, "<br>");
+
+    return (
+      <div
+        className="prose prose-sm max-w-none dark:prose-invert leading-relaxed break-words font-medium text-[15px]"
+        dangerouslySetInnerHTML={{ __html: processed }}
+      />
+    );
+  };
+
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-full max-w-md flex flex-col gap-3">
-      <div className="bg-gradient-to-b from-card via-card to-card/95 border border-border/50 rounded-3xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-sm h-[600px]">
-        {/* Header with gradient background */}
-        <div className="flex items-center justify-between p-5 bg-gradient-to-r from-accent/20 via-accent/10 to-transparent border-b border-border/30 flex-shrink-0 gap-3">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {renderAvatar("sm")}
-            <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-sm text-foreground truncate">
-                {chatbot?.name}
+    <div className="fixed bottom-6 right-6 z-[100] w-[90vw] md:w-[380px] flex flex-col gap-3 font-sans animate-in slide-in-from-bottom-10 fade-in duration-300">
+      <div className="bg-background border border-border/50 rounded-2xl shadow-2xl flex flex-col overflow-hidden h-[600px] max-h-[80vh]">
+        {/* Header */}
+        <div
+          className="flex items-center justify-between p-4 text-white shadow-md z-10"
+          style={{ backgroundColor: accentColor }}
+        >
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="relative">
+              {renderAvatar("sm")}
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 border-2 border-white rounded-full"></span>
+            </div>
+            <div className="flex-col overflow-hidden">
+              <h3 className="font-bold text-sm truncate leading-tight">
+                {chatbot?.name || "AI Assistant"}
               </h3>
-              <p className="text-xs text-muted-foreground truncate">
-                {chatbot?.tagline}
+              <p className="text-[10px] opacity-90 truncate">
+                {chatbot?.tagline || "Online"}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleClearChat}
+              className="p-1.5 hover:bg-white/20 rounded-full transition-colors"
+              title="New Chat"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
             <button
               onClick={() => setShowBilling(!showBilling)}
-              className="p-2 hover:bg-accent/10 rounded-lg transition-colors"
-              title="View billing info"
-              aria-label="Billing info"
+              className="p-1.5 hover:bg-white/20 rounded-full transition-colors"
+              title="Usage"
             >
-              <CreditCard className="w-4 h-4 text-muted-foreground hover:text-accent" />
+              <CreditCard className="w-4 h-4" />
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-destructive/10 rounded-lg transition-colors"
-              aria-label="Close chat"
+              className="p-1.5 hover:bg-white/20 rounded-full transition-colors"
+              aria-label="Close"
             >
-              <X className="w-5 h-5 text-muted-foreground hover:text-destructive" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Billing Info - shown when showBilling is true */}
+        {/* Usage/Billing Panel overlay */}
         {showBilling && (
-          <div className="p-4 border-b border-border/30 bg-accent/5 backdrop-blur-sm animate-in slide-in-from-top-2">
+          <div className="absolute top-16 left-0 right-0 p-4 bg-background/95 backdrop-blur-md border-b border-border z-20 animate-in slide-in-from-top-5 shadow-lg">
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-foreground">
-                  Messages Used
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-foreground">
+                  Monthly Usage
                 </span>
-                <span className="text-sm font-medium text-accent">
+                <span
+                  className={`${
+                    isNearLimit ? "text-destructive" : "text-primary"
+                  }`}
+                >
                   {messageCount} / {messagesLimit}
                 </span>
               </div>
-              <div className="w-full bg-border/50 rounded-full h-2.5 overflow-hidden">
+              <div className="w-full bg-secondary rounded-full h-2">
                 <div
-                  className={`h-full transition-all duration-300 ${
-                    isNearLimit
-                      ? "bg-destructive"
-                      : "bg-gradient-to-r from-accent to-accent/60"
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    isNearLimit ? "bg-destructive" : "bg-primary"
                   }`}
                   style={{
                     width: `${Math.min(
@@ -201,110 +276,170 @@ export function FloatingChatWidget({ chatbot, onClose }) {
                 />
               </div>
               {isNearLimit && (
-                <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg">
-                  <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-destructive font-medium">
-                    Message limit reached. Upgrade to continue.
-                  </p>
+                <div className="text-xs text-destructive flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Limit reached. Please upgrade.
                 </div>
               )}
-              <button className="w-full px-4 py-2.5 bg-gradient-to-r from-accent to-accent/80 text-accent-foreground rounded-lg font-semibold text-sm hover:from-accent/90 hover:to-accent/70 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
-                <Zap className="w-4 h-4" />
-                Upgrade Plan
+              <button
+                className="w-full py-2 text-white rounded-lg text-xs font-bold shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                style={{
+                  background: `linear-gradient(to right, ${accentColor}, #2563eb)`,
+                }}
+              >
+                <Zap className="w-3 h-3" />
+                UPGRADE NOW
               </button>
             </div>
           </div>
         )}
 
-        {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-background/30">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${
-                msg.role === "user" ? "justify-end" : "justify-start"
-              } gap-3 animate-in fade-in slide-in-from-bottom-2`}
-            >
-              {msg.role === "assistant" && (
-                <div className="flex-shrink-0">{renderAvatar("sm")}</div>
-              )}
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-5 bg-secondary/10 scroll-smooth">
+          {messages.map((msg, idx) => {
+            const isUser = msg.role === "user";
+            const isMsgRtl = isRTL(msg.content);
+
+            return (
               <div
-                className={`max-w-xs px-4 py-3 rounded-2xl text-sm leading-relaxed transition-all ${
-                  msg.role === "user"
-                    ? "bg-accent text-accent-foreground rounded-br-none shadow-md"
-                    : "bg-muted text-muted-foreground rounded-bl-none border border-border/50 shadow-sm"
-                }`}
+                key={msg.id || idx}
+                className={`flex w-full ${
+                  isUser ? "justify-end" : "justify-start"
+                } animate-in fade-in slide-in-from-bottom-2 duration-300`}
               >
-                {msg.role === "assistant" ? (
+                <div
+                  className={`flex max-w-[85%] ${
+                    isUser ? "flex-row-reverse" : "flex-row"
+                  } gap-2`}
+                >
+                  {!isUser && (
+                    <div className="flex-shrink-0 mt-auto">
+                      {renderAvatar("sm")}
+                    </div>
+                  )}
+
                   <div
-                    className="prose prose-sm max-w-none dark:prose-invert prose-headings:mt-2 prose-headings:mb-1 prose-p:my-1 prose-ul:my-1 prose-ol:my-1"
-                    dangerouslySetInnerHTML={{
-                      __html: msg.content
-                        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-                        .replace(/^### (.*$)/gim, "<h3>$1</h3>")
-                        .replace(/^## (.*$)/gim, "<h2>$1</h2>")
-                        .replace(/^# (.*$)/gim, "<h1>$1</h1>")
-                        .replace(/^- (.*$)/gim, "<li>$1</li>")
-                        .replace(/^\d+\. (.*$)/gim, "<li>$1</li>")
-                        .replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>")
-                        .replace(/```(.*?)```/gs, "<pre><code>$1</code></pre>")
-                        .replace(/`(.*?)`/g, "<code>$1</code>")
-                        .replace(/\n/g, "<br>"),
-                    }}
-                  />
-                ) : (
-                  msg.content
-                )}
+                    className={`
+                                relative px-4 py-3 shadow-sm text-[15px]
+                                ${
+                                  isUser
+                                    ? "text-white rounded-2xl rounded-tr-sm"
+                                    : "bg-card text-card-foreground border border-border/50 rounded-2xl rounded-tl-sm"
+                                }
+                            `}
+                    style={isUser ? { backgroundColor: accentColor } : {}}
+                    dir={isMsgRtl ? "rtl" : "ltr"}
+                  >
+                    {renderMessageContent(msg.content)}
+                    <span
+                      className={`text-[9px] block mt-1 ${
+                        isUser ? "text-white/70" : "text-muted-foreground"
+                      } ${isMsgRtl ? "text-left" : "text-right"}`}
+                    >
+                      {new Date().toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
+
+          {/* Typing Indicator */}
           {loading && (
-            <div className="flex justify-start gap-3">
-              <div className="flex-shrink-0">{renderAvatar("sm")}</div>
-              <div className="bg-muted text-muted-foreground px-4 py-3 rounded-2xl rounded-bl-none border border-border/50 shadow-sm">
-                <div className="flex gap-2">
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-100" />
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-200" />
+            <div className="flex w-full justify-start animate-in fade-in">
+              <div className="flex max-w-[85%] flex-row gap-2">
+                <div className="flex-shrink-0 mt-auto">
+                  {renderAvatar("sm")}
+                </div>
+                <div className="bg-card border border-border/50 px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-foreground/40 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="w-1.5 h-1.5 bg-foreground/40 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="w-1.5 h-1.5 bg-foreground/40 rounded-full animate-bounce"></span>
                 </div>
               </div>
             </div>
           )}
+
           {error && (
-            <div className="flex justify-start gap-3">
-              <div className="flex-shrink-0">{renderAvatar("sm")}</div>
-              <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-2xl rounded-bl-none border border-destructive/30 text-sm max-w-xs">
-                {error}
-              </div>
+            <div className="flex justify-center my-2 animate-in fade-in">
+              <span className="bg-destructive/10 text-destructive text-xs px-3 py-1 rounded-full border border-destructive/20 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> {error}
+              </span>
             </div>
           )}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input Area */}
-        <div className="p-4 border-t border-border/30 bg-card/95 flex-shrink-0 backdrop-blur-sm">
-          <div className="flex gap-2">
-            <input
-              type="text"
+        <div className="p-3 bg-background border-t border-border">
+          {messages.length < 3 && chatbot?.suggestedMessages && (
+            <div className="flex gap-2 overflow-x-auto pb-3 mb-1 scrollbar-hide">
+              {chatbot.suggestedMessages
+                .split("\n")
+                .filter(Boolean)
+                .map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInput(s);
+                      setTimeout(handleSendMessage, 0);
+                    }}
+                    className="whitespace-nowrap px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded-full border border-border transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+            </div>
+          )}
+
+          <div className="flex gap-2 items-end">
+            <textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => {
+              onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   handleSendMessage();
                 }
               }}
-              placeholder="Type your message..."
-              className="flex-1 px-4 py-2.5 border border-border/50 rounded-xl text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-transparent transition-all"
+              placeholder="Type a message..."
+              className="flex-1 max-h-32 min-h-[44px] py-3 px-4 bg-secondary/30 border border-transparent focus:border-input focus:bg-background rounded-2xl text-sm focus:outline-none resize-none transition-all scrollbar-hide"
+              rows={1}
               disabled={loading || isNearLimit}
+              style={{ height: "auto", overflowY: "hidden" }}
+              onInput={(e) => {
+                e.target.style.height = "auto";
+                e.target.style.height = e.target.scrollHeight + "px";
+              }}
+              dir="auto"
             />
             <button
               onClick={handleSendMessage}
               disabled={loading || !input.trim() || isNearLimit}
-              className="px-4 py-2.5 bg-gradient-to-r from-accent to-accent/80 text-accent-foreground rounded-xl hover:from-accent/90 hover:to-accent/70 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold flex items-center justify-center shadow-md hover:shadow-lg"
-              aria-label="Send message"
+              className={`
+                h-[44px] w-[44px] flex items-center justify-center rounded-full shadow-sm transition-all
+                ${
+                  !input.trim() || loading || isNearLimit
+                    ? "bg-secondary text-muted-foreground cursor-not-allowed"
+                    : "text-white hover:scale-105 active:scale-95"
+                }
+              `}
+              style={
+                !input.trim() || loading || isNearLimit
+                  ? { backgroundColor: accentColor }
+                  : {}
+              }
+              aria-label="Send"
             >
-              <Send className="w-4 h-4" />
+              {loading ? (
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Send className="w-5 h-5 ml-0.5" />
+              )}
             </button>
           </div>
         </div>

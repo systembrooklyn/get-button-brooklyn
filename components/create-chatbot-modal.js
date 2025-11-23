@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { createChatbot } from "@/app/actions/chatbot-actions";
-import { Upload, FileText, X } from "lucide-react";
+import { Upload, FileText, X, Palette, Sparkles } from "lucide-react";
 
 export default function CreateChatbotModal({
   isOpen,
@@ -29,6 +29,8 @@ export default function CreateChatbotModal({
     name: "",
     tagline: "",
     botLanguage: "en",
+    color: "#2563eb",
+    personality: "friendly",
     greetingMessage: "Hello! How can I help you today?",
     suggestedMessages:
       "How can I get started?\nWhat are your prices?\nTell me more about your services",
@@ -38,6 +40,14 @@ export default function CreateChatbotModal({
     avatar: "",
     trainingFiles: "",
   });
+
+  const PERSONALITY_OPTIONS = [
+    { id: "friendly", name: "Friendly", desc: "Warm, enthusiastic, uses emojis" },
+    { id: "professional", name: "Professional", desc: "Formal, respectful, corporate" },
+    { id: "direct", name: "Direct", desc: "Concise, straight to the point" },
+    { id: "empathetic", name: "Empathetic", desc: "Caring, supportive, understanding" },
+    { id: "humorous", name: "Humorous", desc: "Witty, fun, lighthearted" },
+  ];
 
   const handleAvatarUpload = (e) => {
     const file = e.target.files?.[0];
@@ -141,28 +151,18 @@ export default function CreateChatbotModal({
         setError("Please enter a tagline");
         return;
       }
-      if (!formData.greetingMessage.trim()) {
-        setError("Please enter a greeting message");
-        return;
-      }
-      setStep("datasources");
+      setStep("personality");
       setError("");
+    } else if (step === "personality") {
+        setStep("datasources");
+        setError("");
     } else if (step === "datasources") {
-      if (!formData.dataSourceUrl.trim() && uploadedFiles.length === 0) {
-        setError("Please enter a data source URL or upload training files");
-        return;
-      }
       setStep("prompt");
       setError("");
     }
   };
 
   const handleCreate = async () => {
-    if (!formData.systemPrompt.trim()) {
-      setError("Please enter a system prompt");
-      return;
-    }
-
     setLoading(true);
     setError("");
 
@@ -171,6 +171,8 @@ export default function CreateChatbotModal({
         name: formData.name,
         tagline: formData.tagline,
         botLanguage: formData.botLanguage,
+        color: formData.color,
+        personality: formData.personality,
         greetingMessage: formData.greetingMessage,
         suggestedMessages: formData.suggestedMessages,
         sendMessageText: formData.sendMessageText,
@@ -187,6 +189,7 @@ export default function CreateChatbotModal({
       }
 
       onClose();
+      // Reset form
       setStep("general");
       setAvatarPreview("");
       setUploadedFiles([]);
@@ -194,9 +197,10 @@ export default function CreateChatbotModal({
         name: "",
         tagline: "",
         botLanguage: "en",
+        color: "#2563eb",
+        personality: "friendly",
         greetingMessage: "Hello! How can I help you today?",
-        suggestedMessages:
-          "How can I get started?\nWhat are your prices?\nTell me more about your services",
+        suggestedMessages: "How can I get started?\nWhat are your prices?",
         sendMessageText: "Send",
         systemPrompt: "",
         dataSourceUrl: "",
@@ -213,134 +217,116 @@ export default function CreateChatbotModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border rounded-2xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-card border-border rounded-2xl">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-foreground">
             Create New AI Chatbot
           </DialogTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            Set up your chatbot&apos;s personality and data sources
+            Build a smart assistant in minutes
           </p>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
           {/* Tab Navigation */}
-          <div className="flex gap-4 border-b border-border overflow-x-auto">
-            <button
-              onClick={() => setStep("general")}
-              className={`pb-3 text-sm font-semibold whitespace-nowrap transition-all ${
-                step === "general"
-                  ? "border-b-2 border-accent text-accent"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              GENERAL
-            </button>
-            <button
-              onClick={() => setStep("datasources")}
-              className={`pb-3 text-sm font-semibold whitespace-nowrap transition-all ${
-                step === "datasources"
-                  ? "border-b-2 border-accent text-accent"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              disabled={!formData.name.trim()}
-            >
-              DATA SOURCES
-            </button>
-            <button
-              onClick={() => setStep("prompt")}
-              className={`pb-3 text-sm font-semibold whitespace-nowrap transition-all ${
-                step === "prompt"
-                  ? "border-b-2 border-accent text-accent"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              disabled={
-                !formData.dataSourceUrl.trim() && uploadedFiles.length === 0
-              }
-            >
-              CUSTOM INSTRUCTIONS
-            </button>
+          <div className="flex gap-6 border-b border-border overflow-x-auto">
+            {["general", "personality", "datasources", "prompt"].map((s) => (
+                <button
+                    key={s}
+                    onClick={() => setStep(s)}
+                    className={`pb-3 text-sm font-bold whitespace-nowrap transition-all uppercase ${
+                        step === s
+                        ? "border-b-2 border-accent text-accent"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                >
+                    {s}
+                </button>
+            ))}
           </div>
 
           {/* Step 1: General Info */}
           {step === "general" && (
-            <div className="space-y-6">
-              {/* Avatar Upload */}
-              <div>
-                <label className="text-sm font-semibold text-foreground block mb-4">
-                  Bot Avatar
-                </label>
-                <div className="flex gap-6 items-start">
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-24 h-24 rounded-full bg-gradient-to-br from-accent/20 to-accent/5 border-2 border-dashed border-accent/50 flex items-center justify-center cursor-pointer hover:border-accent transition-all group"
-                  >
-                    {avatarPreview ? (
-                      <img
-                        src={avatarPreview || "/placeholder.svg"}
-                        alt="Avatar preview"
-                        className="w-full h-full rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="text-center">
-                        <Upload className="w-6 h-6 text-accent/70 mx-auto mb-1 group-hover:text-accent" />
-                        <p className="text-xs text-muted-foreground">Upload</p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleAvatarUpload}
-                      accept="image/*"
-                      className="hidden"
-                    />
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Click the avatar to upload an image
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Recommended: Square image, Max 1MB
-                    </p>
-                  </div>
+            <div className="space-y-6 animate-in fade-in">
+              <div className="flex flex-col sm:flex-row gap-6">
+                {/* Avatar Upload */}
+                <div className="flex-shrink-0">
+                    <label className="text-sm font-semibold text-foreground block mb-2">
+                    Bot Avatar
+                    </label>
+                    <div
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-24 h-24 rounded-full border-2 border-dashed border-accent/50 flex items-center justify-center cursor-pointer hover:border-accent transition-all group overflow-hidden relative bg-muted/30"
+                    >
+                        {avatarPreview ? (
+                        <img
+                            src={avatarPreview || "/placeholder.svg"}
+                            alt="Avatar preview"
+                            className="w-full h-full object-cover"
+                        />
+                        ) : (
+                        <div className="text-center p-2">
+                            <Upload className="w-6 h-6 text-accent/70 mx-auto mb-1 group-hover:text-accent" />
+                            <p className="text-[10px] text-muted-foreground">Upload</p>
+                        </div>
+                        )}
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleAvatarUpload}
+                            accept="image/*"
+                            className="hidden"
+                        />
+                    </div>
+                </div>
+
+                <div className="flex-1 space-y-4">
+                    <div>
+                        <label className="text-sm font-semibold text-foreground block mb-2">
+                            Chatbot Name <span className="text-destructive">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            name="name"
+                            value={formData.name}
+                            onChange={handleInputChange}
+                            placeholder="e.g., Support Bot"
+                            className="w-full px-4 py-2.5 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
+                            maxLength={50}
+                        />
+                    </div>
+                    <div>
+                        <label className="text-sm font-semibold text-foreground block mb-2">
+                            Tagline <span className="text-destructive">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            name="tagline"
+                            value={formData.tagline}
+                            onChange={handleInputChange}
+                            placeholder="e.g., Online"
+                            className="w-full px-4 py-2.5 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
+                            maxLength={50}
+                        />
+                    </div>
                 </div>
               </div>
 
-              <div className="space-y-5">
+              <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-semibold text-foreground block mb-2">
-                    Chatbot Name <span className="text-destructive">*</span>
+                    Primary Color
                   </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    placeholder="e.g., Customer Support Bot"
-                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
-                    maxLength={50}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formData.name.length}/50 characters
-                  </p>
-                </div>
-
-                <div>
-                  <label className="text-sm font-semibold text-foreground block mb-2">
-                    Tagline <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="tagline"
-                    value={formData.tagline}
-                    onChange={handleInputChange}
-                    placeholder="e.g., Your friendly AI assistant"
-                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
-                    maxLength={100}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Brief description of your chatbot
-                  </p>
+                  <div className="flex items-center gap-3">
+                      <input 
+                        type="color" 
+                        name="color"
+                        value={formData.color}
+                        onChange={handleInputChange}
+                        className="h-10 w-20 p-1 bg-background border border-border rounded cursor-pointer"
+                      />
+                      <span className="text-sm font-mono text-muted-foreground">{formData.color}</span>
+                  </div>
                 </div>
 
                 <div>
@@ -351,85 +337,88 @@ export default function CreateChatbotModal({
                     name="botLanguage"
                     value={formData.botLanguage}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                    className="w-full px-4 py-2.5 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
                   >
                     <option value="en">English</option>
                     <option value="es">Spanish</option>
+                    <option value="ar">Arabic</option>
                     <option value="fr">French</option>
                     <option value="de">German</option>
-                    <option value="it">Italian</option>
-                    <option value="pt">Portuguese</option>
-                    <option value="ar">Arabic</option>
-                    <option value="zh">Chinese</option>
-                    <option value="ja">Japanese</option>
                   </select>
                 </div>
+              </div>
 
-                <div>
-                  <label className="text-sm font-semibold text-foreground block mb-2">
-                    Greeting Message <span className="text-destructive">*</span>
-                  </label>
-                  <textarea
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">
+                    Greeting Message
+                </label>
+                <textarea
                     name="greetingMessage"
                     value={formData.greetingMessage}
                     onChange={handleInputChange}
-                    placeholder="e.g., Hello! I'm here to help you with any questions."
-                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent resize-none"
-                    rows="3"
-                    maxLength={500}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formData.greetingMessage.length}/500 characters
-                  </p>
-                </div>
-
-                <div>
-                  <label className="text-sm font-semibold text-foreground block mb-2">
-                    Suggested Messages
-                  </label>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Enter each message in a new line
-                  </p>
-                  <textarea
-                    name="suggestedMessages"
-                    value={formData.suggestedMessages}
-                    onChange={handleInputChange}
-                    placeholder="How can I get started?&#10;What are your prices?&#10;Tell me more"
-                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent resize-none"
-                    rows="4"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-semibold text-foreground block mb-2">
-                    Send Message Text
-                  </label>
-                  <input
-                    type="text"
-                    name="sendMessageText"
-                    value={formData.sendMessageText}
-                    onChange={handleInputChange}
-                    placeholder="e.g., Send"
-                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
-                    maxLength={20}
-                  />
-                </div>
+                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent resize-none"
+                    rows="2"
+                    maxLength={200}
+                />
               </div>
             </div>
           )}
 
-          {/* Step 2: Data Sources */}
+          {/* Step 2: Personality */}
+          {step === "personality" && (
+              <div className="space-y-6 animate-in fade-in">
+                  <div className="grid sm:grid-cols-2 gap-4">
+                      {PERSONALITY_OPTIONS.map((option) => (
+                          <div 
+                            key={option.id}
+                            onClick={() => setFormData(prev => ({ ...prev, personality: option.id }))}
+                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                formData.personality === option.id 
+                                ? "border-accent bg-accent/5" 
+                                : "border-border hover:border-accent/50"
+                            }`}
+                          >
+                              <div className="flex items-center gap-2 mb-1">
+                                  <Sparkles className={`w-4 h-4 ${formData.personality === option.id ? "text-accent" : "text-muted-foreground"}`} />
+                                  <h3 className="font-bold text-foreground">{option.name}</h3>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{option.desc}</p>
+                          </div>
+                      ))}
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-foreground block mb-2">
+                        Suggested Messages (Quick Replies)
+                    </label>
+                    <textarea
+                        name="suggestedMessages"
+                        value={formData.suggestedMessages}
+                        onChange={handleInputChange}
+                        placeholder="One message per line"
+                        className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent resize-none"
+                        rows="4"
+                    />
+                  </div>
+              </div>
+          )}
+
+          {/* Step 3: Data Sources */}
           {step === "datasources" && (
-            <div className="space-y-5">
+            <div className="space-y-5 animate-in fade-in">
               <div>
                 <label className="text-sm font-semibold text-foreground block mb-2">
-                  Upload Training Files
+                  Upload Knowledge Base
                 </label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Upload files for bot training (pdf, txt, docx, csv, xlsx).
-                  Maximum file size: 5MB.
-                </p>
-
+                <div 
+                    onClick={() => trainingFileRef.current?.click()}
+                    className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:bg-accent/5 hover:border-accent transition-colors cursor-pointer"
+                >
+                    <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm font-medium text-foreground">Click to upload files</p>
+                    <p className="text-xs text-muted-foreground mt-1">PDF, TXT, CSV, DOCX (Max 5MB)</p>
+                </div>
+                
                 <input
                   type="file"
                   ref={trainingFileRef}
@@ -439,30 +428,20 @@ export default function CreateChatbotModal({
                   className="hidden"
                 />
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => trainingFileRef.current?.click()}
-                  className="w-full gap-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload Files
-                </Button>
-
                 {uploadedFiles.length > 0 && (
                   <div className="mt-4 space-y-2">
                     {uploadedFiles.map((file, index) => (
                       <div
                         key={index}
-                        className="flex items-center justify-between p-3 bg-accent/5 rounded-lg border border-border"
+                        className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg border border-border"
                       >
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-accent" />
                           <div>
-                            <p className="text-sm font-medium text-foreground">
+                            <p className="text-sm font-medium text-foreground truncate max-w-[200px]">
                               {file.name}
                             </p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-[10px] text-muted-foreground">
                               {(file.size / 1024).toFixed(1)} KB
                             </p>
                           </div>
@@ -479,122 +458,99 @@ export default function CreateChatbotModal({
                 )}
               </div>
 
+              <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card px-2 text-muted-foreground">Or connect website</span>
+                  </div>
+              </div>
+
               <div>
                 <label className="text-sm font-semibold text-foreground block mb-2">
-                  Your Website URL
+                  Website URL
                 </label>
-                <p className="text-xs text-muted-foreground mb-2">
-                  (sitemap.xml supported)
-                </p>
                 <input
                   type="url"
                   name="dataSourceUrl"
                   value={formData.dataSourceUrl}
                   onChange={handleInputChange}
-                  placeholder="https://yourwebsite.com or https://yourwebsite.com/sitemap.xml"
-                  className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                  placeholder="https://yourwebsite.com"
+                  className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
                 />
-                <p className="text-xs text-muted-foreground mt-2">
-                  The AI will scrape and learn from your website content to
-                  provide accurate answers.
-                </p>
-              </div>
-
-              <div className="bg-accent/5 border border-accent/30 rounded-lg p-4">
-                <p className="text-sm text-foreground">
-                  💡 <strong>Tip:</strong> Upload training files or provide a
-                  website URL for better chatbot responses. You can use both!
-                </p>
               </div>
             </div>
           )}
 
-          {/* Step 3: System Prompt */}
+          {/* Step 4: System Prompt */}
           {step === "prompt" && (
-            <div className="space-y-5">
+            <div className="space-y-5 animate-in fade-in">
               <div>
                 <label className="text-sm font-semibold text-foreground block mb-2">
-                  Custom Chatbot Instructions{" "}
-                  <span className="text-destructive">*</span>
+                  Custom Instructions (System Prompt)
                 </label>
                 <p className="text-xs text-muted-foreground mb-3">
-                  For better understanding of the instructions by the AI
-                  Chatbot, use simple text without complex symbols (emoji,
-                  bullets, etc) 😊
+                   Override the default behavior with specific rules.
                 </p>
                 <textarea
                   name="systemPrompt"
                   value={formData.systemPrompt}
                   onChange={handleInputChange}
-                  placeholder="Define your chatbot's personality and behavior. Example: You are a helpful customer service representative..."
-                  className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent resize-vertical"
-                  rows="10"
+                  placeholder="e.g. You are a helpful support agent for [Company Name]. If asked about pricing, refer to..."
+                  className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent font-mono"
+                  rows="12"
                   maxLength={3000}
                 />
-                <p className="text-xs text-muted-foreground mt-2">
-                  {formData.systemPrompt.length}/3000 characters
-                </p>
-              </div>
-
-              <div className="bg-accent/5 border border-accent/20 rounded-lg p-4">
-                <p className="text-sm text-foreground mb-2">
-                  <strong>Example prompt template:</strong>
-                </p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  We want our AI to be helpful and personable. Here's how we
-                  handle different types of inquiries:
-                  <br />
-                  <br />
-                  1. If a customer provides a greeting or something unrelated to
-                  our knowledge base, we give a polite response and guide them
-                  towards providing more information or asking a question we can
-                  assist with.
-                  <br />
-                  <br />
-                  2. If a customer asks a question that can be answered with our
-                  knowledge base context, we provide a clear and concise answer.
-                  <br />
-                  <br />
-                  3. If a customer asks something we do not know or we cannot
-                  answer based on the context provided, we politely acknowledge
-                  our limitations.
-                </p>
               </div>
             </div>
           )}
 
           {error && (
-            <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4">
+            <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 animate-in slide-in-from-top-2">
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
 
           {/* Action Buttons */}
-          <div className="flex gap-3 justify-end pt-6 border-t border-border">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={loading}
-              className="px-6 bg-transparent"
-            >
-              Cancel
-            </Button>
-            {step !== "prompt" ? (
-              <Button
-                onClick={handleNextStep}
-                className="px-6 bg-accent hover:bg-accent/90 text-accent-foreground"
-              >
-                Next Step
-              </Button>
-            ) : (
-              <Button
-                onClick={handleCreate}
-                disabled={loading}
-                className="px-6 bg-accent hover:bg-accent/90 text-accent-foreground"
-              >
-                {loading ? "Creating Chatbot..." : "Create Chatbot"}
-              </Button>
-            )}
+          <div className="flex gap-3 justify-between pt-6 border-t border-border mt-4">
+             {step !== "general" ? (
+                 <Button variant="outline" onClick={() => {
+                     if(step === "personality") setStep("general");
+                     else if(step === "datasources") setStep("personality");
+                     else if(step === "prompt") setStep("datasources");
+                 }}>
+                     Back
+                 </Button>
+             ) : (
+                 <div />
+             )}
+             
+            <div className="flex gap-3">
+                <Button
+                    variant="ghost"
+                    onClick={onClose}
+                    disabled={loading}
+                >
+                    Cancel
+                </Button>
+                {step !== "prompt" ? (
+                <Button
+                    onClick={handleNextStep}
+                    className="btn-accent"
+                >
+                    Next
+                </Button>
+                ) : (
+                <Button
+                    onClick={handleCreate}
+                    disabled={loading}
+                    className="btn-accent"
+                >
+                    {loading ? "Creating..." : "Create Chatbot"}
+                </Button>
+                )}
+            </div>
           </div>
         </div>
       </DialogContent>

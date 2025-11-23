@@ -35,16 +35,21 @@ model Button {
 }
 
 model Chatbot {
-  id                String        @id @default(cuid())
-  userId            String
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name              String
-  tagline           String        @default("")
-  greetingMessage   String        @default("Hello! How can I help?")
-  avatar            String        @default("")
-  systemPrompt      String        @db.Text
-  dataSourceUrl     String        @default("")
-  botLanguage       String        @default("en")
+  id              String @id @default(cuid())
+  userId          String
+  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  tagline         String @default("")
+  greetingMessage String @default("Hello! How can I help?")
+  avatar          String @default("")
+  systemPrompt    String @db.Text
+  dataSourceUrl   String @default("")
+  botLanguage     String @default("en")
+
+  // New Fields for UI/UX
+  color       String @default("#2563eb")
+  personality String @default("friendly")
+
   suggestedMessages String        @default("") @db.Text
   sendMessageText   String        @default("Send")
   trainingFiles     String        @default("") @db.Text
