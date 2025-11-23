@@ -107,6 +107,17 @@ export default function GetButtonTab({ initialButtons, userId }) {
     }
   };
 
+  // Merge button data with platform metadata (icon, color, etc.)
+  const activeButtons = buttons
+    .map((button) => {
+      const platform = PLATFORMS.find((p) => p.id === button.platform);
+      return {
+        ...button,
+        platformData: platform,
+      };
+    })
+    .filter((b) => b.platformData); // Ensure we only keep valid platforms
+
   return (
     <div className="space-y-8">
       <Card className="p-8">
@@ -209,13 +220,8 @@ export default function GetButtonTab({ initialButtons, userId }) {
         </Card>
       )}
 
-      {/* Render the buttons with an index for stacking */}
-      {buttons.map((button, index) => {
-        const platform = PLATFORMS.find((p) => p.id === button.platform);
-        return (
-          <FloatingButton key={button.id} button={button} platform={platform} index={index} />
-        );
-      })}
+      {/* Render the Floating Widget passing all buttons */}
+      <FloatingButton buttons={activeButtons} />
     </div>
   );
 }
