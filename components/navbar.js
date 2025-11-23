@@ -104,7 +104,7 @@ export default function Navbar({ user: initialUser }) {
             onClick={() => router.push("/profile")}
             className="px-4 py-2 text-white hover:bg-white/10 rounded-full transition-colors text-sm font-medium"
           >
-            AI Chatbots
+            Profile{" "}
           </button>
         </div>
 
