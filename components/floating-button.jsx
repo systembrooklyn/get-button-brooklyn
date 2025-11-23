@@ -35,7 +35,7 @@ export default function FloatingButton({ button, platform, index = 0 }) {
   // Stack buttons vertically with more breathing room to prevent overlap
   // Base is 100px from bottom.
   // Increased gap from 65px to 80px to ensure separation.
-  const bottomPosition = 10 + index * 80;
+  const bottomPosition = 100 + index * 80;
 
   return (
     <button
