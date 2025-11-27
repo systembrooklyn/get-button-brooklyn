@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import {
   MessageSquare,
@@ -18,53 +18,72 @@ export default function ChatLogsTab({ chatbots }) {
 
   const activeBot = chatbots.find((c) => c.id === selectedChatbot);
 
-  // Flatten messages and group by Session ID
-  const groupedSessions = (activeBot?.messages || []).reduce((acc, msg) => {
-    const sessId = msg.sessionId || "Legacy";
-    if (!acc[sessId]) {
-      acc[sessId] = {
-        id: sessId,
-        startTime: msg.createdAt,
-        messages: [],
-        preview: "",
-      };
-    }
-    acc[sessId].messages.push(msg);
-    // Sort messages by time within session
-    acc[sessId].messages.sort(
+  // Group messages dynamically by time gap since DB doesn't store sessionId
+  const sessions = useMemo(() => {
+    if (!activeBot?.messages || activeBot.messages.length === 0) return [];
+
+    const sortedMessages = [...activeBot.messages].sort(
       (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
     );
 
-    // Set preview to first user message
-    if (msg.role === "user" && !acc[sessId].preview) {
-      acc[sessId].preview = msg.content;
-    }
+    const grouped = [];
+    let currentSession = null;
+    const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes in ms
 
-    return acc;
-  }, {});
+    sortedMessages.forEach((msg) => {
+      const msgTime = new Date(msg.createdAt).getTime();
 
-  const now = new Date();
-
-  const sessions = Object.values(groupedSessions)
-    .sort((a, b) => new Date(b.startTime) - new Date(a.startTime))
-    .filter((s) => {
-      // Search Filter
-      const matchesSearch =
-        s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.preview.toLowerCase().includes(searchQuery.toLowerCase());
-
-      if (!matchesSearch) return false;
-
-      // Time Filter
-      const sessionDate = new Date(s.startTime);
-      const diffHours = (now - sessionDate) / (1000 * 60 * 60);
-
-      if (timeFilter === "24h") return diffHours <= 24;
-      if (timeFilter === "7d") return diffHours <= 24 * 7;
-      if (timeFilter === "30d") return diffHours <= 24 * 30;
-
-      return true;
+      if (
+        !currentSession ||
+        msgTime - currentSession.lastMsgTime > SESSION_TIMEOUT
+      ) {
+        // Start new session
+        if (currentSession) grouped.push(currentSession);
+        currentSession = {
+          id: `sess_${msg.id.substring(0, 6)}_${msgTime}`, // Synthetic ID
+          startTime: msg.createdAt,
+          lastMsgTime: msgTime,
+          messages: [msg],
+          preview: msg.role === "user" ? msg.content : "",
+        };
+      } else {
+        // Add to existing session
+        currentSession.messages.push(msg);
+        currentSession.lastMsgTime = msgTime;
+        if (msg.role === "user" && !currentSession.preview) {
+          currentSession.preview = msg.content;
+        }
+      }
     });
+
+    if (currentSession) grouped.push(currentSession);
+
+    // Sort sessions by newest first
+    return grouped.sort(
+      (a, b) => new Date(b.startTime) - new Date(a.startTime)
+    );
+  }, [activeBot]);
+
+  const filteredSessions = sessions.filter((s) => {
+    // Search Filter
+    const matchesSearch =
+      s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.preview &&
+        s.preview.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    if (!matchesSearch) return false;
+
+    // Time Filter
+    const sessionDate = new Date(s.startTime);
+    const now = new Date();
+    const diffHours = (now - sessionDate) / (1000 * 60 * 60);
+
+    if (timeFilter === "24h") return diffHours <= 24;
+    if (timeFilter === "7d") return diffHours <= 24 * 7;
+    if (timeFilter === "30d") return diffHours <= 24 * 30;
+
+    return true;
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in">
@@ -118,7 +137,7 @@ export default function ChatLogsTab({ chatbots }) {
               <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search session ID or message content..."
+                placeholder="Search session ID or content..."
                 className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-accent outline-none"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -130,13 +149,13 @@ export default function ChatLogsTab({ chatbots }) {
 
       {/* Logs List */}
       <div className="grid gap-4">
-        {sessions.length > 0 ? (
-          sessions.map((session) => (
+        {filteredSessions.length > 0 ? (
+          filteredSessions.map((session) => (
             <Card
               key={session.id}
               className="overflow-hidden border border-border hover:border-accent/50 transition-colors shadow-sm"
             >
-              <div className="bg-secondary/30 p-3 border-b border-border flex justify-between items-center">
+              <div className="bg-muted/30 p-3 border-b border-border flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <span className="bg-accent/10 text-accent p-1.5 rounded-md">
                     <Clock className="w-4 h-4" />
@@ -146,9 +165,7 @@ export default function ChatLogsTab({ chatbots }) {
                       className="text-xs font-mono text-muted-foreground"
                       title={session.id}
                     >
-                      {session.id.length > 20
-                        ? session.id.substring(0, 20) + "..."
-                        : session.id}
+                      Session {new Date(session.startTime).toLocaleTimeString()}
                     </span>
                     <span className="text-xs font-medium">
                       {new Date(session.startTime).toLocaleString()}
@@ -202,8 +219,7 @@ export default function ChatLogsTab({ chatbots }) {
               No chat logs found
             </h3>
             <p className="text-muted-foreground text-sm max-w-sm mx-auto mt-1">
-              Try adjusting your search or filters, or start a new conversation
-              with your chatbot to populate logs.
+              Start a new conversation with your chatbot to populate logs.
             </p>
           </div>
         )}

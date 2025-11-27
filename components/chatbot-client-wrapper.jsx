@@ -1,88 +1,218 @@
 "use client";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import GetButtonTab from "@/components/get-button-tab";
+
+import React, { useState, useEffect } from "react";
+import {
+  MessageCircle,
+  LayoutGrid,
+  CreditCard,
+  History,
+  Menu,
+  X,
+  Zap,
+} from "lucide-react";
 import AIChatbotTab from "@/components/ai-chatbot-tab";
-import BillingTab from "@/components/billing-tab";
+import GetButtonTab from "@/components/get-button-tab";
 import ChatLogsTab from "@/components/chat-logs-tab";
-import { MessageCircle, LayoutGrid, CreditCard, History } from "lucide-react";
+import BillingTab from "@/components/billing-tab";
+import { getChatbotByUserId } from "@/app/actions/chatbot-actions";
 
 export default function ChatbotClientWrapper({
   initialChatbots,
   initialButtons,
   userId,
 }) {
+  const [activeTab, setActiveTab] = useState("chatbots");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // State for chatbots to allow dynamic updates
+  const [chatbots, setChatbots] = useState(initialChatbots);
+
+  // Refresh data on mount to ensure we have the latest DB values
+  useEffect(() => {
+    refreshChatbots();
+  }, []);
+
+  // Function to refresh chatbot data (usage, logs, etc.)
+  const refreshChatbots = async () => {
+    try {
+      const updatedChatbots = await getChatbotByUserId(userId);
+      setChatbots(updatedChatbots);
+    } catch (error) {
+      console.error("Failed to refresh chatbots:", error);
+    }
+  };
+
+  // --- Global Usage Calculation ---
+  // Limit is dynamic: 20 messages per chatbot created
+  const MESSAGES_PER_BOT = 20;
+  const totalLimit = Math.max(chatbots.length * MESSAGES_PER_BOT, 0);
+
+  // Sum up all messages across all chatbots based on DB count
+  const totalMessagesUsed = chatbots.reduce(
+    (acc, chatbot) => acc + (chatbot.messageCount || 0),
+    0
+  );
+
+  const messagesRemaining = Math.max(0, totalLimit - totalMessagesUsed);
+  const usagePercentage =
+    totalLimit > 0
+      ? Math.min((totalMessagesUsed / totalLimit) * 100, 100)
+      : totalMessagesUsed > 0
+      ? 100
+      : 0;
+
+  const navItems = [
+    { id: "chatbots", label: "AI Chatbots", icon: MessageCircle },
+    { id: "buttons", label: "Floating Buttons", icon: LayoutGrid },
+    { id: "logs", label: "Chat Logs", icon: History },
+    { id: "billing", label: "Billing & Usage", icon: CreditCard },
+  ];
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case "chatbots":
+        return (
+          <AIChatbotTab
+            chatbots={chatbots}
+            userId={userId}
+            onRefresh={refreshChatbots}
+          />
+        );
+      case "buttons":
+        return <GetButtonTab initialButtons={initialButtons} userId={userId} />;
+      case "logs":
+        return <ChatLogsTab chatbots={chatbots} />;
+      case "billing":
+        return <BillingTab chatbots={chatbots} />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b border-border bg-card shadow-sm sticky top-0 z-30">
-        <div className="container-minimal py-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight mb-1">
-                Chat Management
-              </h1>
-              <p className="text-muted-foreground text-sm">
-                Manage your chat buttons, AI chatbots, and billing
+    <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
+      {/* Mobile Header */}
+      <div className="md:hidden bg-card border-b border-border p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+        <div className="flex items-center gap-2 font-bold text-xl text-primary">
+          <MessageCircle className="w-6 h-6" />
+          <span>GetButton</span>
+        </div>
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-2 hover:bg-muted rounded-md text-foreground"
+        >
+          {mobileMenuOpen ? (
+            <X className="w-6 h-6" />
+          ) : (
+            <Menu className="w-6 h-6" />
+          )}
+        </button>
+      </div>
+
+      {/* Main Container Layout - Centered with Sidebar */}
+      <div className="container-minimal mx-auto flex flex-col md:flex-row min-h-screen pt-4 md:pt-8 md:gap-8">
+        {/* Sidebar Navigation */}
+        <aside
+          className={`
+            fixed inset-y-0 left-0 z-40 w-72 bg-card border-r border-border transition-transform duration-300 ease-in-out shadow-lg md:shadow-none
+            md:static md:translate-x-0 md:bg-transparent md:border-r-0 md:w-64 md:flex-shrink-0
+            ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
+          `}
+        >
+          <div className="h-full flex flex-col p-4 md:p-0 overflow-y-auto">
+            {/* Logo (Desktop) */}
+            <div className="hidden md:flex items-center gap-2 font-bold text-2xl text-primary mb-8 px-2">
+              <MessageCircle className="w-8 h-8" />
+              <span>GetButton</span>
+            </div>
+
+            {/* Navigation Menu */}
+            <nav className="flex-1 space-y-2">
+              {navItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`
+                    w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200
+                    ${
+                      activeTab === item.id
+                        ? "bg-primary text-primary-foreground shadow-md"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    }
+                  `}
+                >
+                  <item.icon className="w-5 h-5" />
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+
+            {/* Usage Widget (Bottom of Sidebar) */}
+            <div className="mt-8 p-5 bg-card border border-border rounded-xl shadow-sm mb-[30%]">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                  <Zap className="w-4 h-4 text-amber-500 fill-amber-500" />
+                  <span>Messages</span>
+                </div>
+                {totalLimit > 0 && (
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      usagePercentage >= 90
+                        ? "bg-destructive/10 text-destructive border-destructive/20"
+                        : "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
+                    }`}
+                  >
+                    {messagesRemaining} left
+                  </span>
+                )}
+              </div>
+
+              <div className="mb-2">
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="text-2xl font-bold text-foreground">
+                    {totalMessagesUsed}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    / {totalLimit} limit
+                  </span>
+                </div>
+              </div>
+
+              <div className="w-full bg-muted/50 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    usagePercentage >= 90 ? "bg-destructive" : "bg-primary"
+                  }`}
+                  style={{ width: `${usagePercentage}%` }}
+                />
+              </div>
+
+              <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+                You get <strong>{MESSAGES_PER_BOT} messages</strong> for every
+                chatbot you create.
               </p>
             </div>
           </div>
-        </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 min-w-0 pb-0 px-4 md:px-0">
+          <div className="bg-card text-card-foreground border border-border rounded-xl shadow-sm min-h-[600px] p-6 animate-in fade-in duration-300">
+            {renderContent()}
+          </div>
+        </main>
       </div>
 
-      <div className="container-minimal py-8">
-        <Tabs defaultValue="ai-chatbot" className="w-full">
-          <TabsList className="w-full flex flex-col sm:flex-row h-auto p-1 bg-muted/50 rounded-xl border border-border mb-8">
-            <TabsTrigger
-              value="ai-chatbot"
-              className="flex-1 py-3 gap-2 data-[state=active]:bg-background data-[state=active]:shadow-md"
-            >
-              <MessageCircle className="w-4 h-4" /> AI Chatbots
-            </TabsTrigger>
-            <TabsTrigger
-              value="get-button"
-              className="flex-1 py-3 gap-2 data-[state=active]:bg-background data-[state=active]:shadow-md"
-            >
-              <LayoutGrid className="w-4 h-4" /> Floating Buttons
-            </TabsTrigger>
-            <TabsTrigger
-              value="logs"
-              className="flex-1 py-3 gap-2 data-[state=active]:bg-background data-[state=active]:shadow-md"
-            >
-              <History className="w-4 h-4" /> Chat Logs
-            </TabsTrigger>
-            <TabsTrigger
-              value="billing"
-              className="flex-1 py-3 gap-2 data-[state=active]:bg-background data-[state=active]:shadow-md"
-            >
-              <CreditCard className="w-4 h-4" /> Billing & Usage
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent
-            value="ai-chatbot"
-            className="mt-0 focus-visible:outline-none"
-          >
-            <AIChatbotTab initialChatbots={initialChatbots} userId={userId} />
-          </TabsContent>
-
-          <TabsContent
-            value="get-button"
-            className="mt-0 focus-visible:outline-none"
-          >
-            <GetButtonTab initialButtons={initialButtons} userId={userId} />
-          </TabsContent>
-
-          <TabsContent value="logs" className="mt-0 focus-visible:outline-none">
-            <ChatLogsTab chatbots={initialChatbots} />
-          </TabsContent>
-
-          <TabsContent
-            value="billing"
-            className="mt-0 focus-visible:outline-none"
-          >
-            <BillingTab chatbots={initialChatbots} />
-          </TabsContent>
-        </Tabs>
-      </div>
+      {/* Overlay for mobile sidebar */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
     </div>
   );
 }

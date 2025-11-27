@@ -11,7 +11,7 @@ export async function POST(req) {
     } = await supabase.auth.getUser();
 
     const body = await req.json();
-    const { message, chatbotId, sessionId } = body;
+    const { message, chatbotId } = body;
 
     if (!message || !chatbotId) {
       return Response.json(
@@ -38,11 +38,12 @@ export async function POST(req) {
       return Response.json({ error: "Chatbot not found" }, { status: 404 });
     }
 
-    // 2. Check Limits
+    // 2. Check Limits (Strict Check)
+    // If usage is equal or greater than limit, block request
     if (chatbot.messageCount >= chatbot.messagesLimit) {
       return Response.json(
-        { error: "Message limit reached. Please upgrade to continue." },
-        { status: 429 }
+        { error: "Message limit reached." },
+        { status: 403 } // 403 triggers the Limit Modal in frontend
       );
     }
 
@@ -69,7 +70,6 @@ export async function POST(req) {
       ? JSON.parse(chatbot.trainingFiles)
       : [];
 
-    // Limit file context to avoid token overflow
     const MAX_FILE_CONTEXT = 25000;
 
     for (const file of trainingData) {
@@ -79,13 +79,11 @@ export async function POST(req) {
             ? file.data.split(",")[1]
             : file.data;
           const text = Buffer.from(content, "base64").toString("utf-8");
-          // Rigorous cleanup for potential binary files read as text
           const cleanText = text.replace(
             /[^\x20-\x7E\n\r\t\u00A0-\uFFFF]/g,
             " "
           );
 
-          // Only add if it looks like meaningful text
           if (cleanText.length > 50) {
             fileContext += `\n\n--- SOURCE DOCUMENT: ${
               file.name
@@ -106,9 +104,7 @@ ${personalityInstruction}
 
 ## CORE INSTRUCTIONS
 - **Language Detection**: Detect the language of the user's message and ALWAYS reply in the SAME language.
-- **Arabic Handling**: If replying in Arabic, use clear, modern standard Arabic (Fusha) or a professional dialect.
 - **Formatting**: Use Markdown to make your answers structured (Bold key terms, use Bullet points for lists).
-- **External Links**: If you find a URL in the context, present it clearly (e.g., https://example.com) so it is clickable.
 - **Knowledge Base**: Use the context below to answer questions. If the answer is NOT in the context, politely say you don't have that information.
 
 ## CUSTOM INSTRUCTIONS
@@ -117,14 +113,12 @@ ${chatbot.systemPrompt || ""}
 ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
 `;
 
-    // 6. Fetch History (Filtered by Session ID if possible, or just general history for context window)
-    // We only want the history for THIS session to avoid mixing conversations
+    // 6. Fetch History (Last 10 messages for context)
     let messageHistory = [];
     try {
       messageHistory = await prisma.chatMessage.findMany({
         where: {
           chatbotId,
-          sessionId: sessionId || "anonymous",
         },
         take: 10,
         orderBy: { createdAt: "desc" },
@@ -171,8 +165,6 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
       );
 
       if (!apiResponse.ok) {
-        const error = await apiResponse.json();
-        console.error("[v0] Groq API error:", error);
         throw new Error("AI Service Unavailable");
       }
 
@@ -188,17 +180,14 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
       );
     }
 
-    // 8. Save Transaction
-    // Use sessionId to group messages
-    const currentSessionId = sessionId || `session_${Date.now()}`;
-
-    await Promise.allSettled([
+    // 8. Save Transaction & Update Limits
+    // FIX: Increment messageCount by 1 (counting the whole interaction as 1 credit)
+    await prisma.$transaction([
       prisma.chatMessage.create({
         data: {
           chatbotId,
           role: "user",
           content: message,
-          sessionId: currentSessionId,
         },
       }),
       prisma.chatMessage.create({
@@ -206,18 +195,16 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
           chatbotId,
           role: "assistant",
           content: assistantMessage,
-          sessionId: currentSessionId,
         },
       }),
       prisma.chatbot.update({
         where: { id: chatbotId },
-        data: { messageCount: { increment: 2 } },
+        data: { messageCount: { increment: 1 } },
       }),
     ]);
 
     return Response.json({
       message: assistantMessage,
-      sessionId: currentSessionId,
     });
   } catch (error) {
     console.error("[v0] Uncaught Chat API error:", error);
