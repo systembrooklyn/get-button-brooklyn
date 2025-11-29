@@ -10,6 +10,7 @@ import {
   Trash2,
   FileText,
   Globe,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,12 +21,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import CreateChatbotModal from "@/components/create-chatbot-modal";
 import EditChatbotModal from "@/components/edit-chatbot-modal";
+import UpgradeModal from "@/components/upgrade-modal"; // Import the new modal
 import { FloatingChatWidget } from "@/components/floating-chat-widget";
 import { deleteChatbot } from "@/app/actions/chatbot-actions";
 
 export default function AIChatbotTab({ chatbots, userId, onRefresh }) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false); // State for upgrade modal
   const [selectedChatbotForEdit, setSelectedChatbotForEdit] = useState(null);
 
   // Store ID instead of object so it updates when parent chatbots array updates
@@ -35,6 +38,16 @@ export default function AIChatbotTab({ chatbots, userId, onRefresh }) {
   const testingChatbot = testingChatbotId
     ? chatbots.find((c) => c.id === testingChatbotId)
     : null;
+
+  const MAX_CHATBOTS = 3;
+
+  const handleCreateClick = () => {
+    if (chatbots.length >= MAX_CHATBOTS) {
+      setIsUpgradeModalOpen(true);
+    } else {
+      setIsCreateModalOpen(true);
+    }
+  };
 
   const handleDeleteChatbot = async (chatbotId) => {
     if (!confirm("Are you sure you want to delete this chatbot?")) return;
@@ -108,11 +121,19 @@ export default function AIChatbotTab({ chatbots, userId, onRefresh }) {
           </p>
         </div>
         <Button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="btn-accent shadow-lg shadow-accent/20 rounded-lg px-6 h-10 gap-2 font-semibold"
+          onClick={handleCreateClick}
+          className={`shadow-lg rounded-lg px-6 h-10 gap-2 font-semibold ${
+            chatbots.length >= MAX_CHATBOTS
+              ? "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+              : "btn-accent shadow-accent/20"
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          Create Chatbot
+          {chatbots.length >= MAX_CHATBOTS ? (
+            <Lock className="w-4 h-4" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
+          {chatbots.length >= MAX_CHATBOTS ? "Limit Reached" : "Create Chatbot"}
         </Button>
       </div>
 
@@ -286,7 +307,7 @@ export default function AIChatbotTab({ chatbots, userId, onRefresh }) {
                         your visitors automatically.
                       </p>
                       <Button
-                        onClick={() => setIsCreateModalOpen(true)}
+                        onClick={handleCreateClick}
                         className="btn-accent"
                       >
                         Create Your First Chatbot
@@ -313,6 +334,11 @@ export default function AIChatbotTab({ chatbots, userId, onRefresh }) {
         onClose={() => setIsEditModalOpen(false)}
         chatbot={selectedChatbotForEdit}
         onChatbotUpdated={handleChatbotUpdated}
+      />
+
+      <UpgradeModal
+        isOpen={isUpgradeModalOpen}
+        onClose={() => setIsUpgradeModalOpen(false)}
       />
 
       {testingChatbot && (

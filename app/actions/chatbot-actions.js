@@ -14,16 +14,17 @@ export async function createChatbot(data) {
   }
 
   // Ensure user exists in Prisma
+  // Dynamic import for avoiding circular deps if user-actions imports this
   const { syncUserToPrisma } = await import("./user-actions.js");
   await syncUserToPrisma();
 
-  // Enforce 3 Chatbots Limit
+  // Enforce 3 Chatbots Limit Server Side (Double Check)
   const currentCount = await prisma.chatbot.count({
     where: { userId: user.id },
   });
 
   if (currentCount >= 3) {
-    throw new Error("You have reached the maximum limit of 3 chatbots.");
+    throw new Error("LIMIT_REACHED");
   }
 
   const {
@@ -60,18 +61,20 @@ export async function createChatbot(data) {
   if (trainingFiles) {
     try {
       const files = JSON.parse(trainingFiles);
-      for (const file of files) {
-        if (file.data) {
-          // Check if data is base64
-          const base64Data = file.data.includes(",")
-            ? file.data.split(",")[1]
-            : file.data;
-          const decodedContent = Buffer.from(base64Data, "base64").toString(
-            "utf-8"
-          );
-          // Simple cleanup for display in system prompt
-          const cleanText = decodedContent.replace(/[^\x20-\x7E\n\r\t]/g, "");
-          trainingContent += `\n\nFile: ${file.name}\n${cleanText}\n`;
+      if (Array.isArray(files)) {
+        for (const file of files) {
+          if (file.data) {
+            // Check if data is base64
+            const base64Data = file.data.includes(",")
+              ? file.data.split(",")[1]
+              : file.data;
+            const decodedContent = Buffer.from(base64Data, "base64").toString(
+              "utf-8"
+            );
+            // Simple cleanup for display in system prompt
+            const cleanText = decodedContent.replace(/[^\x20-\x7E\n\r\t]/g, "");
+            trainingContent += `\n\nFile: ${file.name}\n${cleanText}\n`;
+          }
         }
       }
     } catch (error) {
@@ -177,6 +180,7 @@ export async function updateChatbot(chatbotId, data) {
   }
 
   let updatedSystemPrompt = data.systemPrompt;
+  // If URL changed, re-scrape
   if (data.dataSourceUrl && data.dataSourceUrl !== chatbot.dataSourceUrl) {
     try {
       console.log("[v0] Scraping updated website:", data.dataSourceUrl);
