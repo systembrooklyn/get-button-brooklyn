@@ -7,10 +7,7 @@ import { Moon, Sun, Globe } from "lucide-react";
 
 export default function Navbar({ user: initialUser }) {
   const [user, setUser] = useState(initialUser);
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof document === "undefined") return false;
-    return document.documentElement.classList.contains("dark");
-  });
+  const [isDark, setIsDark] = useState(false);
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
@@ -18,6 +15,9 @@ export default function Navbar({ user: initialUser }) {
 
   useEffect(() => {
     setMounted(true);
+    if (typeof document !== "undefined") {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    }
   }, []);
 
   useEffect(() => {
@@ -29,8 +29,9 @@ export default function Navbar({ user: initialUser }) {
     };
 
     checkUser();
-  }, [pathname, supabase]);
+  }, [supabase, pathname]);
 
+  // Auth state listener
   useEffect(() => {
     if (!mounted) return;
 
@@ -39,12 +40,29 @@ export default function Navbar({ user: initialUser }) {
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       console.log("[v0] Auth state changed:", _event, session?.user?.email);
       setUser(session?.user ?? null);
-      // Force router refresh to update server components
-      router.refresh();
+
+      // Specifically handle sign out event to redirect immediately
+      if (_event === "SIGNED_OUT") {
+        window.location.href = "/login";
+      } else {
+        router.refresh();
+      }
     });
 
     return () => subscription.unsubscribe();
   }, [supabase, mounted, router]);
+
+  // Route protection: Exit chatbot or profile page if not logged in
+  useEffect(() => {
+    if (mounted && !user) {
+      const protectedRoutes = ["/chatbot", "/profile"];
+      // Check if current path starts with any protected route
+      if (protectedRoutes.some((route) => pathname?.startsWith(route))) {
+        // Use hard redirect to ensure we clear the protected page state completely
+        window.location.href = "/login";
+      }
+    }
+  }, [user, pathname, mounted]);
 
   const toggleTheme = useCallback(() => {
     const isDarkMode = document.documentElement.classList.toggle("dark");
@@ -53,10 +71,15 @@ export default function Navbar({ user: initialUser }) {
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    router.push("/login");
-    router.refresh();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    } finally {
+      setUser(null);
+      // Hard redirect to login page to ensure complete exit from the app context
+      window.location.href = "/login";
+    }
   };
 
   if (!mounted) return null;
