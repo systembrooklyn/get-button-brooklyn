@@ -140,7 +140,7 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
       parts: [{ text: msg.content }],
     }));
 
-    // 7. Call LLM (Google Gemini)
+    // 7. Call LLM (Google Geminisss)
     let assistantMessage;
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
