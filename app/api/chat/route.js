@@ -76,7 +76,7 @@ export async function POST(req) {
       console.error("Error parsing training files:", e);
     }
 
-    // Gemini handles large context well, so we can be more generous than before
+    // Gemini handles large context well
     const MAX_FILE_CONTEXT = 50000;
 
     for (const file of trainingData) {
@@ -112,7 +112,7 @@ ${personalityInstruction}
 ## CORE INSTRUCTIONS
 - **Language Detection**: Detect the language of the user's message and ALWAYS reply in the SAME language.
 - **Formatting**: Use Markdown to make your answers structured (Bold key terms, use Bullet points for lists).
-- **Knowledge Base**: Use the context below to answer questions. If the answer is NOT in the context, politely say you don't have that information.
+- **Knowledge Base & Search**: Use the context below OR Google Search to answer questions. If the answer cannot be found in either, politely say you don't have that information.
 
 ## CUSTOM INSTRUCTIONS
 ${chatbot.systemPrompt || ""}
@@ -140,9 +140,17 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
       parts: [{ text: msg.content }],
     }));
 
-    // 7. Call LLM (Google Geminisss)
+    // 7. Call LLM (Google Gemini)
     let assistantMessage;
     try {
+      // Explicitly check for API Key to avoid confusing "default credentials" errors
+      if (!process.env.API_KEY) {
+        console.error(
+          "CRITICAL ERROR: API_KEY is missing in environment variables."
+        );
+        throw new Error("Server Configuration: Missing API_KEY");
+      }
+
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const chat = ai.chats.create({
@@ -150,14 +158,51 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
         config: {
           systemInstruction: currentSystemPrompt,
           temperature: 0.7,
+          // Enable Google Search so the bot can "extract data from links"
+          tools: [{ googleSearch: {} }],
         },
         history: history,
       });
 
       const result = await chat.sendMessage({ message: message });
       assistantMessage = result.text;
+
+      // Extract and append sources from Google Search Grounding if available
+      const groundingChunks =
+        result.candidates?.[0]?.groundingMetadata?.groundingChunks;
+
+      if (groundingChunks && groundingChunks.length > 0) {
+        const sources = groundingChunks
+          .map((chunk) => {
+            if (chunk.web?.uri && chunk.web?.title) {
+              return `[${chunk.web.title}](${chunk.web.uri})`;
+            }
+            return null;
+          })
+          .filter(Boolean);
+
+        // Deduplicate sources
+        const uniqueSources = [...new Set(sources)];
+
+        if (uniqueSources.length > 0) {
+          assistantMessage +=
+            "\n\n**Sources:**\n" +
+            uniqueSources.map((s) => `- ${s}`).join("\n");
+        }
+      }
     } catch (aiError) {
       console.error("[v0] AI Generation error:", aiError);
+
+      if (
+        aiError.message.includes("API_KEY") ||
+        aiError.message.includes("default credentials")
+      ) {
+        return Response.json(
+          { error: "Configuration Error: API Key missing or invalid." },
+          { status: 500 }
+        );
+      }
+
       return Response.json(
         { error: "Failed to process request." },
         { status: 500 }
@@ -165,7 +210,6 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
     }
 
     // 8. Save Transaction & Update Limits
-    // Increment messageCount by 1 (counting the whole interaction as 1 credit)
     await prisma.$transaction([
       prisma.chatMessage.create({
         data: {
