@@ -1,5 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { GoogleGenAI } from "@google/genai";
 
 export async function POST(req) {
   try {
@@ -66,11 +67,17 @@ export async function POST(req) {
 
     // 4. Build Knowledge Base / File Context
     let fileContext = "";
-    const trainingData = chatbot.trainingFiles
-      ? JSON.parse(chatbot.trainingFiles)
-      : [];
+    let trainingData = [];
+    try {
+      trainingData = chatbot.trainingFiles
+        ? JSON.parse(chatbot.trainingFiles)
+        : [];
+    } catch (e) {
+      console.error("Error parsing training files:", e);
+    }
 
-    const MAX_FILE_CONTEXT = 25000;
+    // Gemini handles large context well, so we can be more generous than before
+    const MAX_FILE_CONTEXT = 50000;
 
     for (const file of trainingData) {
       if (file.data && fileContext.length < MAX_FILE_CONTEXT) {
@@ -87,7 +94,7 @@ export async function POST(req) {
           if (cleanText.length > 50) {
             fileContext += `\n\n--- SOURCE DOCUMENT: ${
               file.name
-            } ---\n${cleanText.substring(0, 8000)}\n`;
+            } ---\n${cleanText.substring(0, 15000)}\n`;
           }
         } catch (e) {
           console.warn("Failed to process file context for", file.name);
@@ -127,51 +134,28 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
       console.error("[v0] Error fetching message history:", dbError);
     }
 
-    const conversationMessages = messageHistory.reverse().map((msg) => ({
-      role: msg.role,
-      content: msg.content,
+    // Map DB history to Gemini format (user/model)
+    const history = messageHistory.reverse().map((msg) => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
     }));
 
-    conversationMessages.push({
-      role: "user",
-      content: message,
-    });
-
-    // 7. Call LLM (Groq)
+    // 7. Call LLM (Google Gemini)
     let assistantMessage;
     try {
-      const apiResponse = await fetch(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            messages: [
-              {
-                role: "system",
-                content: currentSystemPrompt,
-              },
-              ...conversationMessages,
-            ],
-            max_tokens: 1500,
-            temperature: 0.7,
-            top_p: 0.9,
-          }),
-        }
-      );
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-      if (!apiResponse.ok) {
-        throw new Error("AI Service Unavailable");
-      }
+      const chat = ai.chats.create({
+        model: "gemini-2.5-flash",
+        config: {
+          systemInstruction: currentSystemPrompt,
+          temperature: 0.7,
+        },
+        history: history,
+      });
 
-      const apiData = await apiResponse.json();
-      assistantMessage =
-        apiData.choices[0]?.message?.content ||
-        "I apologize, I couldn't generate a response.";
+      const result = await chat.sendMessage({ message: message });
+      assistantMessage = result.text;
     } catch (aiError) {
       console.error("[v0] AI Generation error:", aiError);
       return Response.json(
@@ -181,7 +165,7 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
     }
 
     // 8. Save Transaction & Update Limits
-    // FIX: Increment messageCount by 1 (counting the whole interaction as 1 credit)
+    // Increment messageCount by 1 (counting the whole interaction as 1 credit)
     await prisma.$transaction([
       prisma.chatMessage.create({
         data: {
