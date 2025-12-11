@@ -26,63 +26,56 @@ const linkify = (text) => {
   });
 };
 
-export function FloatingChatWidget({ chatbot, onClose }) {
-  // IMPORTANT: This component is keyed by ID in the parent.
-  // It should remount when switching bots.
+export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
+  const accentColor = chatbot?.color || "#2563eb";
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
-  const [messages, setMessages] = useState([]);
+  // LAZY INITIALIZATION: This runs exactly once when the component mounts (or remounts due to key change).
+  // This guarantees we load the CORRECT chat history for THIS specific chatbot ID immediately.
+  const [messages, setMessages] = useState(() => {
+    if (typeof window === "undefined" || !chatbot?.id) return [];
+
+    const key = `chat_${chatbot.id}`;
+    const initialMsg = {
+      id: 1,
+      role: "assistant",
+      content: chatbot?.greetingMessage || "Hello! How can I help you today?",
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Failed to parse chat history", e);
+    }
+    return [initialMsg];
+  });
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isLimitReachedState, setIsLimitReachedState] = useState(false);
 
-  // Safety ref to prevent saving data to the wrong key if props change without unmount
-  const currentChatbotIdRef = useRef(chatbot?.id);
-
-  const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
-
-  const accentColor = chatbot?.color || "#2563eb";
-
-  // 1. Initialize Logic
+  // Check limits on mount/update
   useEffect(() => {
-    if (!chatbot?.id) return;
-
-    currentChatbotIdRef.current = chatbot.id;
-
-    // Load from local storage or set initial greeting
-    const key = `chat_${chatbot.id}`;
-    const saved = localStorage.getItem(key);
-
-    if (saved) {
-      try {
-        setMessages(JSON.parse(saved));
-      } catch {
-        setMessages([getInitialMessage()]);
-      }
-    } else {
-      setMessages([getInitialMessage()]);
-    }
-
-    // Check limits
-    const limit = chatbot?.messagesLimit || 20;
-    const count = chatbot?.messageCount || 0;
+    if (!chatbot) return;
+    const limit = chatbot.messagesLimit || 20;
+    const count = chatbot.messageCount || 0;
     setIsLimitReachedState(count >= limit);
+  }, [chatbot]);
 
-    // Focus input
+  // Focus input on mount
+  useEffect(() => {
     setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
-  }, [chatbot.id]);
+  }, []);
 
-  const getInitialMessage = () => ({
-    id: 1,
-    role: "assistant",
-    content: chatbot?.greetingMessage || "Hello! How can I help you today?",
-    createdAt: new Date().toISOString(),
-  });
-
-  // 2. Scroll Logic
+  // Scroll to bottom when messages change
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -91,14 +84,9 @@ export function FloatingChatWidget({ chatbot, onClose }) {
     scrollToBottom();
   }, [messages, loading]);
 
-  // 3. Persistence Logic (With Safety Check)
+  // Persist to LocalStorage whenever messages change
   useEffect(() => {
-    // Only save if the current messages actually belong to the current chatbot ID
-    if (
-      chatbot?.id &&
-      currentChatbotIdRef.current === chatbot.id &&
-      messages.length > 0
-    ) {
+    if (chatbot?.id && messages.length > 0) {
       localStorage.setItem(`chat_${chatbot.id}`, JSON.stringify(messages));
     }
   }, [messages, chatbot?.id]);
@@ -161,7 +149,7 @@ export function FloatingChatWidget({ chatbot, onClose }) {
 
       if (response.status === 429 || response.status === 503) {
         const data = await response.json().catch(() => ({}));
-        setError(data.error || "High traffic. Please try again.");
+        setError(data.error || "Server busy. Please try again.");
         return;
       }
 
@@ -180,7 +168,10 @@ export function FloatingChatWidget({ chatbot, onClose }) {
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Note: We DO NOT call a refresh callback here to avoid global lag.
+      // Notify parent to refresh usage
+      if (onMessageSent) {
+        onMessageSent();
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -190,12 +181,15 @@ export function FloatingChatWidget({ chatbot, onClose }) {
 
   const handleClearChat = () => {
     if (confirm("Start a new conversation?")) {
-      setMessages([getInitialMessage()]);
+      const initialMsg = {
+        id: Date.now(),
+        role: "assistant",
+        content: chatbot?.greetingMessage || "Hello! How can I help you today?",
+        createdAt: new Date().toISOString(),
+      };
+      setMessages([initialMsg]);
       localStorage.removeItem(`chat_${chatbot?.id}`);
       setError("");
-      if (!chatbot.messageCount >= chatbot.messagesLimit) {
-        setIsLimitReachedState(false);
-      }
     }
   };
 

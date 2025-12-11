@@ -21,18 +21,25 @@ export default function ChatbotClientWrapper({
   initialButtons,
   userId,
 }) {
+  // Initialize tab from localStorage if available, else default to "chatbots"
   const [activeTab, setActiveTab] = useState("chatbots");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // State for chatbots to allow dynamic updates
   const [chatbots, setChatbots] = useState(initialChatbots);
 
-  // Refresh data on mount to ensure we have the latest DB values
+  // Effect to load saved tab on mount
   useEffect(() => {
+    const savedTab = localStorage.getItem("activeChatbotTab");
+    if (savedTab) {
+      setActiveTab(savedTab);
+    }
     refreshChatbots();
   }, []);
 
-  // Function to refresh chatbot data (usage, logs, etc.)
+  // Effect to save tab on change
+  useEffect(() => {
+    localStorage.setItem("activeChatbotTab", activeTab);
+  }, [activeTab]);
+
   const refreshChatbots = async () => {
     try {
       const updatedChatbots = await getChatbotByUserId(userId);
@@ -42,12 +49,9 @@ export default function ChatbotClientWrapper({
     }
   };
 
-  // --- Global Usage Calculation ---
-  // Limit is dynamic: 20 messages per chatbot created
   const MESSAGES_PER_BOT = 20;
   const totalLimit = Math.max(chatbots.length * MESSAGES_PER_BOT, 0);
 
-  // Sum up all messages across all chatbots based on DB count
   const totalMessagesUsed = chatbots.reduce(
     (acc, chatbot) => acc + (chatbot.messageCount || 0),
     0
@@ -109,9 +113,8 @@ export default function ChatbotClientWrapper({
         </button>
       </div>
 
-      {/* Main Container Layout - Centered with Sidebar */}
       <div className="container-minimal mx-auto flex flex-col md:flex-row min-h-screen pt-4 md:pt-8 md:gap-8">
-        {/* Sidebar Navigation */}
+        {/* Sidebar */}
         <aside
           className={`
             fixed inset-y-0 left-0 z-40 w-72 bg-card border-r border-border transition-transform duration-300 ease-in-out shadow-lg md:shadow-none
@@ -120,13 +123,11 @@ export default function ChatbotClientWrapper({
           `}
         >
           <div className="h-full flex flex-col p-4 md:p-0 overflow-y-auto">
-            {/* Logo (Desktop) */}
             <div className="hidden md:flex items-center gap-2 font-bold text-2xl text-primary mb-8 px-2">
               <MessageCircle className="w-8 h-8" />
               <span>GetButton</span>
             </div>
 
-            {/* Navigation Menu */}
             <nav className="flex-1 space-y-2">
               {navItems.map((item) => (
                 <button
@@ -150,7 +151,6 @@ export default function ChatbotClientWrapper({
               ))}
             </nav>
 
-            {/* Usage Widget (Bottom of Sidebar) */}
             <div className="mt-8 p-5 bg-card border border-border rounded-xl shadow-sm mb-[30%]">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 text-sm font-bold text-foreground">
@@ -198,7 +198,6 @@ export default function ChatbotClientWrapper({
           </div>
         </aside>
 
-        {/* Main Content Area */}
         <main className="flex-1 min-w-0 pb-0 px-4 md:px-0">
           <div className="bg-card text-card-foreground border border-border rounded-xl shadow-sm min-h-[600px] p-6 animate-in fade-in duration-300">
             {renderContent()}
@@ -206,7 +205,6 @@ export default function ChatbotClientWrapper({
         </main>
       </div>
 
-      {/* Overlay for mobile sidebar */}
       {mobileMenuOpen && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden"

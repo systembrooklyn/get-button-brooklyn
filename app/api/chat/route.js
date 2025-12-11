@@ -1,16 +1,31 @@
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
+import { scrapeWebsite } from "@/app/actions/scraper-actions";
 
-// HARDCODED API KEY AS REQUESTED
-const GOOGLE_API_KEY = "AIzaSyBNxeNUfQDc_IcuCThQUBw758ijII6py1M";
-const ADMIN_UID = "a1941b27-d783-45f0-bf73-f531a6394f02"; // test@test.com
+// API KEY
+const GOOGLE_API_KEY = "AIzaSyBhu7B__tg1uIltdDzOFmmDB1mh4EGoVGk";
+const ADMIN_UID = "a1941b27-d783-45f0-bf73-f531a6394f02";
+
+// Helper to extract URLs
+function extractUrls(text) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return text.match(urlRegex) || [];
+}
+
+// Helper to get domain from URL
+function getDomain(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.replace(/^www\./, "");
+  } catch (e) {
+    return "";
+  }
+}
 
 export async function POST(req) {
   try {
     const supabase = await createClient();
-
-    // Authenticate user for security
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -18,268 +33,168 @@ export async function POST(req) {
     const body = await req.json();
     const { message, chatbotId } = body;
 
-    if (!message || !chatbotId) {
-      return Response.json(
-        { error: "Message and chatbotId required" },
-        { status: 400 }
-      );
-    }
+    if (!message || !chatbotId)
+      return Response.json({ error: "Missing data" }, { status: 400 });
 
-    // 1. Fetch Chatbot Data using Prisma
-    let chatbot;
-    try {
-      chatbot = await prisma.chatbot.findUnique({
-        where: { id: chatbotId },
-      });
-    } catch (dbError) {
-      console.error("[v0] Database error fetching chatbot:", dbError);
-      return Response.json(
-        { error: "Failed to fetch chatbot configuration" },
-        { status: 500 }
-      );
-    }
-
-    if (!chatbot) {
+    const chatbot = await prisma.chatbot.findUnique({
+      where: { id: chatbotId },
+    });
+    if (!chatbot)
       return Response.json({ error: "Chatbot not found" }, { status: 404 });
-    }
 
-    // 2. Check Limits (Bypass for Admin UID)
-    const isAdmin = user && user.id === ADMIN_UID;
+    const isAdmin =
+      (user && user.id === ADMIN_UID) ||
+      (user && user.email === "test@test.com");
+    const limit = chatbot.messagesLimit || 20;
 
-    if (!isAdmin && chatbot.messageCount >= chatbot.messagesLimit) {
+    if (!isAdmin && chatbot.messageCount >= limit) {
       return Response.json(
         { error: "Message limit reached." },
         { status: 403 }
       );
     }
 
-    // 3. Prepare System Instructions (With Strict Truncation)
-    const systemInstructionParts = [];
+    // --- SYSTEM PROMPT CONSTRUCTION ---
+    const systemParts = [];
+    let activeDomain = "";
 
-    // -- Part A: Personality & Core Text Instructions --
-    const personalityMap = {
-      friendly:
-        "You are a friendly, enthusiastic, and warm assistant. Use emojis occasionally and keep the tone welcoming.",
-      professional:
-        "You are a formal, corporate, and professional assistant. Maintain a polite and respectful tone at all times. Avoid slang.",
-      direct:
-        "You are a direct and concise assistant. Provide short, accurate answers without unnecessary fluff or pleasantries.",
-      empathetic:
-        "You are a caring and supportive assistant. Validate the user's feelings and provide empathetic responses.",
-      humorous:
-        "You are a witty and lighthearted assistant. Feel free to use appropriate humor and jokes while being helpful.",
-    };
+    // 1. Live Link Processing (Highest Priority)
+    const liveUrls = extractUrls(message);
+    let liveContentInstruction = "";
 
-    const personalityInstruction =
-      personalityMap[chatbot.personality] || personalityMap.friendly;
+    if (liveUrls.length > 0) {
+      const urlToScrape = liveUrls[0];
+      activeDomain = getDomain(urlToScrape);
 
-    let textPrompt = `You are ${chatbot.name}, ${
-      chatbot.tagline || "an intelligent AI assistant"
-    }.\n\n`;
-    textPrompt += `## YOUR PERSONALITY\n${personalityInstruction}\n\n`;
+      const liveContent = await scrapeWebsite(urlToScrape);
+      liveContentInstruction = `
+\n=== 🚨 LIVE USER LINK DETECTED 🚨 ===
+The user explicitly shared this link: ${urlToScrape}
+Content:
+${liveContent}
 
-    // --- DYNAMIC GROUNDING LOGIC (STRICT) ---
-    textPrompt += `## CRITICAL SOURCE OF TRUTH RULES\n`;
-    textPrompt += `1. **EXCLUSIVE SOURCE**: You must ONLY use information from the provided files and the specific website URL: ${
-      chatbot.dataSourceUrl || "NONE"
-    }.\n`;
-    textPrompt += `2. **NO HALLUCINATIONS**: Do NOT use your internal training data to answer questions about specific company details (prices, address, phone) unless they are in the source.\n`;
-
-    if (chatbot.dataSourceUrl) {
-      textPrompt += `3. **STRICT IDENTITY**: You represent the entity at "${chatbot.dataSourceUrl}".\n`;
-      textPrompt += `   - You are NOT associated with any other company, even if they share a similar name.\n`;
-      textPrompt += `   - If a user asks for contact info, you must ONLY provide details found on ${chatbot.dataSourceUrl} or in the files.\n`;
-    } else {
-      textPrompt += `3. **IDENTITY**: You are a helpful assistant. Do not pretend to be any specific real-world company unless detailed in the files below.\n`;
+INSTRUCTION: 
+- You MUST answer the user's question using ONLY the content above.
+- Do NOT search for other companies. 
+- You are discussing ${activeDomain}. If the content above is insufficient, check if 'googleSearch' can find info specifically for site:${activeDomain}.
+- If you cannot find the info on ${activeDomain}, say "I couldn't find that information on the provided link."
+`;
     }
 
-    textPrompt += `\n## CORE INSTRUCTIONS\n`;
-    textPrompt += `- **Language**: Reply in the same language as the user.\n`;
-    textPrompt += `- **Format**: Use Markdown. Be concise.\n`;
+    // 2. Base Persona
+    let baseInstructions = `
+You are ${chatbot.name || "an intelligent assistant"}.
+Tagline: ${chatbot.tagline || "Here to help"}.
+Personality: ${chatbot.personality || "Friendly"}.
 
-    // Explicit instruction to use Google Search
-    if (chatbot.dataSourceUrl) {
-      textPrompt += `\n## GOOGLE SEARCH INSTRUCTIONS\n`;
-      textPrompt += `If information is missing from files, use 'googleSearch'.\n`;
-      textPrompt += `**STRICT QUERY**: You MUST append "site:${chatbot.dataSourceUrl}" to every search query.\n`;
-      textPrompt += `Example: "pricing site:${chatbot.dataSourceUrl}"\n`;
+STRICT RULES:
+1. Answer using the provided KNOWLEDGE BASE, FILES, or LIVE LINK CONTENT.
+2. If a specific website is discussed (e.g., ${
+      activeDomain || chatbot.dataSourceUrl
+    }), DO NOT provide information about DIFFERENT companies with similar names.
+3. If you use Google Search, verify the URL matches the user's requested domain.
+    `.trim();
+
+    if (liveContentInstruction) {
+      baseInstructions += liveContentInstruction;
+    } else if (chatbot.systemPrompt) {
+      // Only use static KB if no live link was provided to avoid confusion
+      const kb =
+        chatbot.systemPrompt.length > 30000
+          ? chatbot.systemPrompt.substring(0, 30000) + "..."
+          : chatbot.systemPrompt;
+      baseInstructions += `\n\n=== KNOWLEDGE BASE ===\n${kb}`;
     }
 
-    // Append Scraped Content (AGGRESSIVE TRUNCATION: Max 10,000 chars)
-    if (chatbot.systemPrompt) {
-      const MAX_SCRAPE_CHARS = 10000;
-      let contentToAdd = chatbot.systemPrompt;
+    systemParts.push({ text: baseInstructions });
 
-      if (contentToAdd.length > MAX_SCRAPE_CHARS) {
-        contentToAdd =
-          contentToAdd.substring(0, MAX_SCRAPE_CHARS) +
-          "\n...[Content Truncated]";
-      }
-
-      textPrompt += `\n## SCRAPED WEBSITE CONTENT\n${contentToAdd}\n`;
-    }
-
-    // Add the text prompt
-    systemInstructionParts.push({ text: textPrompt });
-
-    // -- Part B: File Context (AGGRESSIVE TRUNCATION) --
+    // 3. File Attachments
     if (chatbot.trainingFiles) {
       try {
         const files = JSON.parse(chatbot.trainingFiles);
-
-        // Limit total processed files
-        const MAX_FILES = 2;
-        const filesToProcess = files.slice(0, MAX_FILES);
-
-        for (const file of filesToProcess) {
+        for (const file of files) {
           if (!file.data) continue;
-
-          // Extract base64
-          const base64Data = file.data.includes(",")
+          const base64 = file.data.includes(",")
             ? file.data.split(",")[1]
             : file.data;
-
           if (file.type === "application/pdf") {
-            systemInstructionParts.push({
-              inlineData: {
-                mimeType: "application/pdf",
-                data: base64Data,
-              },
+            systemParts.push({
+              inlineData: { mimeType: "application/pdf", data: base64 },
             });
           } else if (file.type.startsWith("image/")) {
-            systemInstructionParts.push({
-              inlineData: {
-                mimeType: file.type,
-                data: base64Data,
-              },
+            systemParts.push({
+              inlineData: { mimeType: file.type, data: base64 },
             });
           } else {
-            // Text fallback: Decode and TRUNCATE (Max 5,000 chars per file)
             try {
-              let textContent = Buffer.from(base64Data, "base64").toString(
-                "utf-8"
-              );
-
-              if (textContent.length > 5000) {
-                textContent =
-                  textContent.substring(0, 5000) + "\n...[File Truncated]";
-              }
-
-              systemInstructionParts.push({
-                text: `\n\n--- FILE: ${file.name} ---\n${textContent}\n`,
+              const txt = Buffer.from(base64, "base64").toString("utf-8");
+              systemParts.push({
+                text: `\n=== FILE: ${file.name} ===\n${txt.substring(
+                  0,
+                  20000
+                )}`,
               });
-            } catch (e) {
-              console.warn(`[v0] Failed to decode text for file: ${file.name}`);
-            }
+            } catch (e) {}
           }
         }
       } catch (e) {
-        console.error("[v0] Error parsing training files:", e);
+        console.error("File parse error", e);
       }
     }
 
-    // 4. Fetch History (Optimized: Last 2 messages only)
-    let messageHistory = [];
+    // 4. History
+    let history = [];
     try {
-      messageHistory = await prisma.chatMessage.findMany({
+      const rawHistory = await prisma.chatMessage.findMany({
         where: { chatbotId },
-        take: 2,
+        take: 6,
         orderBy: { createdAt: "desc" },
       });
-    } catch (dbError) {
-      console.error("[v0] Error fetching message history:", dbError);
+      history = rawHistory.reverse().map((msg) => ({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: msg.content }],
+      }));
+    } catch (e) {}
+
+    // 5. Gemini Call
+    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
+    const chat = ai.chats.create({
+      model: "gemini-2.5-flash",
+      config: {
+        systemInstruction: { parts: systemParts },
+        temperature: 0.2, // Low temp for strict adherence
+        tools: [{ googleSearch: {} }],
+      },
+      history: history,
+    });
+
+    const result = await chat.sendMessage({ message });
+    let responseText = result.text;
+
+    // Sources
+    const chunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    if (chunks?.length) {
+      const links = chunks
+        .map((c) =>
+          c.web?.uri && c.web?.title ? `[${c.web.title}](${c.web.uri})` : null
+        )
+        .filter(Boolean);
+      if (links.length)
+        responseText += `\n\n**Sources:**\n${[...new Set(links)].join("\n")}`;
     }
 
-    const history = messageHistory.reverse().map((msg) => ({
-      role: msg.role === "assistant" ? "model" : "user",
-      parts: [{ text: msg.content }],
-    }));
-
-    // 5. Call LLM (Google Gemini)
-    let assistantMessage;
-    try {
-      const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
-
-      // SWITCHED TO LITE MODEL AS REQUESTED
-      const chat = ai.chats.create({
-        model: "gemini-flash-lite-latest",
-        config: {
-          systemInstruction: {
-            parts: systemInstructionParts,
-          },
-          temperature: 0.1,
-          tools: [{ googleSearch: {} }],
-        },
-        history: history,
-      });
-
-      // --- RETRY LOGIC (Simplified) ---
-      // We rely on the lighter model to avoid hitting limits as often
-      try {
-        const result = await chat.sendMessage({ message: message });
-        assistantMessage = result.text;
-
-        // Extract sources
-        const groundingChunks =
-          result.candidates?.[0]?.groundingMetadata?.groundingChunks;
-
-        if (groundingChunks && groundingChunks.length > 0) {
-          const sources = groundingChunks
-            .map((chunk) => {
-              if (chunk.web?.uri && chunk.web?.title) {
-                return `[${chunk.web.title}](${chunk.web.uri})`;
-              }
-              return null;
-            })
-            .filter(Boolean);
-
-          const uniqueSources = [...new Set(sources)];
-
-          if (uniqueSources.length > 0) {
-            assistantMessage +=
-              "\n\n**Sources:**\n" +
-              uniqueSources.map((s) => `- ${s}`).join("\n");
-          }
-        }
-      } catch (err) {
-        console.warn(`[v0] Gemini API failed:`, err.status || err.message);
-
-        if (err.status === 429 || err.status === 503) {
-          return Response.json(
-            { error: "Traffic is high. Please wait a moment." },
-            { status: 429 }
-          );
-        }
-        throw err;
-      }
-    } catch (aiError) {
-      console.error("[v0] AI Generation error:", aiError);
-      return Response.json(
-        { error: "Failed to process request." },
-        { status: 500 }
-      );
-    }
-
-    // 6. Save Transaction
-    const transactionOps = [
+    // 6. Save
+    const ops = [
       prisma.chatMessage.create({
-        data: {
-          chatbotId,
-          role: "user",
-          content: message,
-        },
+        data: { chatbotId, role: "user", content: message },
       }),
       prisma.chatMessage.create({
-        data: {
-          chatbotId,
-          role: "assistant",
-          content: assistantMessage,
-        },
+        data: { chatbotId, role: "assistant", content: responseText },
       }),
     ];
 
     if (!isAdmin) {
-      transactionOps.push(
+      ops.push(
         prisma.chatbot.update({
           where: { id: chatbotId },
           data: { messageCount: { increment: 1 } },
@@ -287,13 +202,20 @@ export async function POST(req) {
       );
     }
 
-    await prisma.$transaction(transactionOps);
+    await prisma.$transaction(ops);
 
-    return Response.json({
-      message: assistantMessage,
-    });
+    return Response.json({ message: responseText });
   } catch (error) {
-    console.error("[v0] Uncaught Chat API error:", error);
-    return Response.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error("[v0] Chat API Error:", error);
+    if (error.status === 429) {
+      return Response.json(
+        { error: "System busy. Please retry." },
+        { status: 429 }
+      );
+    }
+    return Response.json(
+      { error: "Failed to process message." },
+      { status: 500 }
+    );
   }
 }
