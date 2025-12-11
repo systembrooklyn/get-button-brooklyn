@@ -123,12 +123,12 @@ export default function Navbar({ user: initialUser }) {
           >
             AI Chatbots
           </button>
-          <button
+          {/* <button
             onClick={() => router.push("/profile")}
             className="px-4 py-2 text-white hover:bg-white/10 rounded-full transition-colors text-sm font-medium"
           >
             Profile{" "}
-          </button>
+          </button> */}
         </div>
 
         <div className="flex items-center gap-3">

@@ -40,15 +40,19 @@ export async function POST(req) {
     }
 
     // 2. Check Limits (Strict Check)
-    // If usage is equal or greater than limit, block request
     if (chatbot.messageCount >= chatbot.messagesLimit) {
       return Response.json(
         { error: "Message limit reached." },
-        { status: 403 } // 403 triggers the Limit Modal in frontend
+        { status: 403 }
       );
     }
 
-    // 3. Prepare Personality Instruction
+    // 3. Prepare System Instructions (Multimodal Support)
+    // We will build an array of "parts" for the system instruction.
+    // This allows us to pass text prompts AND files (PDFs, Images) natively to Gemini.
+    const systemInstructionParts = [];
+
+    // -- Part A: Personality & Core Text Instructions --
     const personalityMap = {
       friendly:
         "You are a friendly, enthusiastic, and warm assistant. Use emojis occasionally and keep the tone welcoming.",
@@ -65,68 +69,88 @@ export async function POST(req) {
     const personalityInstruction =
       personalityMap[chatbot.personality] || personalityMap.friendly;
 
-    // 4. Build Knowledge Base / File Context
-    let fileContext = "";
-    let trainingData = [];
-    try {
-      trainingData = chatbot.trainingFiles
-        ? JSON.parse(chatbot.trainingFiles)
-        : [];
-    } catch (e) {
-      console.error("Error parsing training files:", e);
+    let textPrompt = `You are ${chatbot.name}, ${
+      chatbot.tagline || "an intelligent AI assistant"
+    }.\n\n`;
+    textPrompt += `## YOUR PERSONALITY\n${personalityInstruction}\n\n`;
+    textPrompt += `## CORE INSTRUCTIONS\n`;
+    textPrompt += `- **Language Detection**: Detect the language of the user's message and ALWAYS reply in the SAME language.\n`;
+    textPrompt += `- **Formatting**: Use Markdown to make your answers structured (Bold key terms, use Bullet points for lists).\n`;
+    textPrompt += `- **Knowledge Base**: Answer questions primarily based on the attached files and website context provided below.\n`;
+
+    // Explicit instruction to use Google Search for the attached URL if context is missing
+    if (chatbot.dataSourceUrl) {
+      textPrompt += `\n## WEBSITE SOURCE\nYou are connected to the website: ${chatbot.dataSourceUrl}\nIf the user asks for information about this website (e.g., location, prices, events) and it is NOT found in the text or files below, you MUST use the 'googleSearch' tool to find the most up-to-date information from ${chatbot.dataSourceUrl}.\n`;
     }
 
-    // Gemini handles large context well
-    const MAX_FILE_CONTEXT = 50000;
+    // Append the scraped content (if it exists in systemPrompt)
+    if (chatbot.systemPrompt) {
+      textPrompt += `\n## CUSTOM INSTRUCTIONS & SCRAPED CONTENT\n${chatbot.systemPrompt}\n`;
+    }
 
-    for (const file of trainingData) {
-      if (file.data && fileContext.length < MAX_FILE_CONTEXT) {
-        try {
-          const content = file.data.includes(",")
+    // Add the text prompt as the first part
+    systemInstructionParts.push({ text: textPrompt });
+
+    // -- Part B: File Context (Native Gemini Support) --
+    // Instead of naively converting everything to text (which breaks PDFs/DOCX),
+    // we pass supported files as inlineData parts.
+    if (chatbot.trainingFiles) {
+      try {
+        const files = JSON.parse(chatbot.trainingFiles);
+
+        for (const file of files) {
+          if (!file.data) continue;
+
+          // Extract base64 string (remove data:mime;base64, prefix if present)
+          const base64Data = file.data.includes(",")
             ? file.data.split(",")[1]
             : file.data;
-          const text = Buffer.from(content, "base64").toString("utf-8");
-          const cleanText = text.replace(
-            /[^\x20-\x7E\n\r\t\u00A0-\uFFFF]/g,
-            " "
-          );
 
-          if (cleanText.length > 50) {
-            fileContext += `\n\n--- SOURCE DOCUMENT: ${
-              file.name
-            } ---\n${cleanText.substring(0, 15000)}\n`;
+          // Handle different file types
+          if (file.type === "application/pdf") {
+            // PDF: Pass as inlineData (Gemini handles this natively!)
+            systemInstructionParts.push({
+              inlineData: {
+                mimeType: "application/pdf",
+                data: base64Data,
+              },
+            });
+          } else if (file.type.startsWith("image/")) {
+            // Images: Pass as inlineData
+            systemInstructionParts.push({
+              inlineData: {
+                mimeType: file.type,
+                data: base64Data,
+              },
+            });
+          } else {
+            // Text files (txt, csv, json, md, html, js) AND Fallback for DOCX
+            // DOCX files are binary (zip). 'Buffer.toString' results in garbage.
+            // Since we can't use external libs (like mammoth) here easily, we fallback to text decoding.
+            // Recommendation: User should upload PDF for documents.
+            try {
+              const textContent = Buffer.from(base64Data, "base64").toString(
+                "utf-8"
+              );
+              // Only add if it looks somewhat like text (simple heuristic could be added here)
+              systemInstructionParts.push({
+                text: `\n\n--- SOURCE FILE: ${file.name} ---\n${textContent}\n`,
+              });
+            } catch (e) {
+              console.warn(`[v0] Failed to decode text for file: ${file.name}`);
+            }
           }
-        } catch (e) {
-          console.warn("Failed to process file context for", file.name);
         }
+      } catch (e) {
+        console.error("[v0] Error parsing training files:", e);
       }
     }
 
-    // 5. Construct the System Prompt
-    const currentSystemPrompt = `
-You are ${chatbot.name}, ${chatbot.tagline || "an intelligent AI assistant"}.
-
-## YOUR PERSONALITY
-${personalityInstruction}
-
-## CORE INSTRUCTIONS
-- **Language Detection**: Detect the language of the user's message and ALWAYS reply in the SAME language.
-- **Formatting**: Use Markdown to make your answers structured (Bold key terms, use Bullet points for lists).
-- **Knowledge Base & Search**: Use the context below OR Google Search to answer questions. If the answer cannot be found in either, politely say you don't have that information.
-
-## CUSTOM INSTRUCTIONS
-${chatbot.systemPrompt || ""}
-
-${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
-`;
-
-    // 6. Fetch History (Last 10 messages for context)
+    // 4. Fetch History (Last 10 messages)
     let messageHistory = [];
     try {
       messageHistory = await prisma.chatMessage.findMany({
-        where: {
-          chatbotId,
-        },
+        where: { chatbotId },
         take: 10,
         orderBy: { createdAt: "desc" },
       });
@@ -134,31 +158,29 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
       console.error("[v0] Error fetching message history:", dbError);
     }
 
-    // Map DB history to Gemini format (user/model)
     const history = messageHistory.reverse().map((msg) => ({
       role: msg.role === "assistant" ? "model" : "user",
       parts: [{ text: msg.content }],
     }));
 
-    // 7. Call LLM (Google Gemini)
+    // 5. Call LLM (Google Gemini)
     let assistantMessage;
     try {
-      // Explicitly check for API Key to avoid confusing "default credentials" errors
       if (!process.env.API_KEY) {
-        console.error(
-          "CRITICAL ERROR: API_KEY is missing in environment variables."
-        );
         throw new Error("Server Configuration: Missing API_KEY");
       }
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const chat = ai.chats.create({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.5-flash", // 2.5 Flash has excellent context handling
         config: {
-          systemInstruction: currentSystemPrompt,
+          // Pass the structured parts (Text + Files) here
+          systemInstruction: {
+            parts: systemInstructionParts,
+          },
           temperature: 0.7,
-          // Enable Google Search so the bot can "extract data from links"
+          // Enable Google Search for URL lookup
           tools: [{ googleSearch: {} }],
         },
         history: history,
@@ -167,7 +189,7 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
       const result = await chat.sendMessage({ message: message });
       assistantMessage = result.text;
 
-      // Extract and append sources from Google Search Grounding if available
+      // Extract sources from Google Search
       const groundingChunks =
         result.candidates?.[0]?.groundingMetadata?.groundingChunks;
 
@@ -181,7 +203,6 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
           })
           .filter(Boolean);
 
-        // Deduplicate sources
         const uniqueSources = [...new Set(sources)];
 
         if (uniqueSources.length > 0) {
@@ -193,10 +214,7 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
     } catch (aiError) {
       console.error("[v0] AI Generation error:", aiError);
 
-      if (
-        aiError.message.includes("API_KEY") ||
-        aiError.message.includes("default credentials")
-      ) {
+      if (aiError.message?.includes("API_KEY")) {
         return Response.json(
           { error: "Configuration Error: API Key missing or invalid." },
           { status: 500 }
@@ -209,7 +227,7 @@ ${fileContext ? `## KNOWLEDGE BASE CONTEXT\n${fileContext}` : ""}
       );
     }
 
-    // 8. Save Transaction & Update Limits
+    // 6. Save Transaction & Update Limits
     await prisma.$transaction([
       prisma.chatMessage.create({
         data: {
