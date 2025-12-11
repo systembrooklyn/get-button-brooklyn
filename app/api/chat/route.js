@@ -1,27 +1,10 @@
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { GoogleGenAI } from "@google/genai";
-import { scrapeWebsite } from "@/app/actions/scraper-actions";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // API KEY
-const GOOGLE_API_KEY = "AIzaSyBhu7B__tg1uIltdDzOFmmDB1mh4EGoVGk";
+const GOOGLE_API_KEY = "AIzaSyBNb9Oh105c8xDVY069ZMgly_RtH86ydnw";
 const ADMIN_UID = "a1941b27-d783-45f0-bf73-f531a6394f02";
-
-// Helper to extract URLs
-function extractUrls(text) {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  return text.match(urlRegex) || [];
-}
-
-// Helper to get domain from URL
-function getDomain(url) {
-  try {
-    const hostname = new URL(url).hostname;
-    return hostname.replace(/^www\./, "");
-  } catch (e) {
-    return "";
-  }
-}
 
 export async function POST(req) {
   try {
@@ -42,99 +25,49 @@ export async function POST(req) {
     if (!chatbot)
       return Response.json({ error: "Chatbot not found" }, { status: 404 });
 
-    const isAdmin =
-      (user && user.id === ADMIN_UID) ||
-      (user && user.email === "test@test.com");
-    const limit = chatbot.messagesLimit || 20;
+    // UNLIMITED ACCESS CHECK
+    const isTestUser = user?.email === "test@test.com";
+    const isAdmin = user?.id === ADMIN_UID || isTestUser;
 
-    if (!isAdmin && chatbot.messageCount >= limit) {
+    // Enforce limits only for non-admins
+    if (!isAdmin && chatbot.messageCount >= (chatbot.messagesLimit || 20)) {
       return Response.json(
         { error: "Message limit reached." },
         { status: 403 }
       );
     }
 
-    // --- SYSTEM PROMPT CONSTRUCTION ---
-    const systemParts = [];
-    let activeDomain = "";
-
-    // 1. Live Link Processing (Highest Priority)
-    const liveUrls = extractUrls(message);
-    let liveContentInstruction = "";
-
-    if (liveUrls.length > 0) {
-      const urlToScrape = liveUrls[0];
-      activeDomain = getDomain(urlToScrape);
-
-      const liveContent = await scrapeWebsite(urlToScrape);
-      liveContentInstruction = `
-\n=== 🚨 LIVE USER LINK DETECTED 🚨 ===
-The user explicitly shared this link: ${urlToScrape}
-Content:
-${liveContent}
-
-INSTRUCTION: 
-- You MUST answer the user's question using ONLY the content above.
-- Do NOT search for other companies. 
-- You are discussing ${activeDomain}. If the content above is insufficient, check if 'googleSearch' can find info specifically for site:${activeDomain}.
-- If you cannot find the info on ${activeDomain}, say "I couldn't find that information on the provided link."
-`;
-    }
-
-    // 2. Base Persona
-    let baseInstructions = `
-You are ${chatbot.name || "an intelligent assistant"}.
-Tagline: ${chatbot.tagline || "Here to help"}.
+    // --- SYSTEM PROMPT ---
+    let systemInstructionText = `You are ${chatbot.name || "AI"}. ${
+      chatbot.tagline || ""
+    }. 
 Personality: ${chatbot.personality || "Friendly"}.
+Format: Markdown. Keep answers concise.`;
 
-STRICT RULES:
-1. Answer using the provided KNOWLEDGE BASE, FILES, or LIVE LINK CONTENT.
-2. If a specific website is discussed (e.g., ${
-      activeDomain || chatbot.dataSourceUrl
-    }), DO NOT provide information about DIFFERENT companies with similar names.
-3. If you use Google Search, verify the URL matches the user's requested domain.
-    `.trim();
-
-    if (liveContentInstruction) {
-      baseInstructions += liveContentInstruction;
-    } else if (chatbot.systemPrompt) {
-      // Only use static KB if no live link was provided to avoid confusion
-      const kb =
-        chatbot.systemPrompt.length > 30000
-          ? chatbot.systemPrompt.substring(0, 30000) + "..."
-          : chatbot.systemPrompt;
-      baseInstructions += `\n\n=== KNOWLEDGE BASE ===\n${kb}`;
+    // Knowledge Base
+    if (chatbot.systemPrompt) {
+      systemInstructionText += `\n\n=== KNOWLEDGE BASE ===\n${chatbot.systemPrompt.substring(
+        0,
+        5000
+      )}`;
     }
 
-    systemParts.push({ text: baseInstructions });
-
-    // 3. File Attachments
+    // Files (Text Only, Simple)
     if (chatbot.trainingFiles) {
       try {
         const files = JSON.parse(chatbot.trainingFiles);
         for (const file of files) {
-          if (!file.data) continue;
-          const base64 = file.data.includes(",")
-            ? file.data.split(",")[1]
-            : file.data;
-          if (file.type === "application/pdf") {
-            systemParts.push({
-              inlineData: { mimeType: "application/pdf", data: base64 },
-            });
-          } else if (file.type.startsWith("image/")) {
-            systemParts.push({
-              inlineData: { mimeType: file.type, data: base64 },
-            });
-          } else {
-            try {
-              const txt = Buffer.from(base64, "base64").toString("utf-8");
-              systemParts.push({
-                text: `\n=== FILE: ${file.name} ===\n${txt.substring(
-                  0,
-                  20000
-                )}`,
-              });
-            } catch (e) {}
+          // Decode text-based files only, skip images to keep it lite
+          if (file.data && !file.type.startsWith("image/")) {
+            const base64 = file.data.includes(",")
+              ? file.data.split(",")[1]
+              : file.data;
+            const txt = Buffer.from(base64, "base64").toString("utf-8");
+            if (txt.trim()) {
+              systemInstructionText += `\n\n--- FILE: ${
+                file.name
+              } ---\n${txt.substring(0, 5000)}\n`;
+            }
           }
         }
       } catch (e) {
@@ -142,48 +75,49 @@ STRICT RULES:
       }
     }
 
-    // 4. History
+    // --- HISTORY ---
     let history = [];
     try {
       const rawHistory = await prisma.chatMessage.findMany({
         where: { chatbotId },
-        take: 6,
+        take: 10,
         orderBy: { createdAt: "desc" },
       });
-      history = rawHistory.reverse().map((msg) => ({
+
+      // Convert to Gemini format
+      const mappedHistory = rawHistory.reverse().map((msg) => ({
         role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }],
+        parts: [{ text: msg.content.substring(0, 1000) }],
       }));
+
+      // CRITICAL FIX: Remove leading model messages to prevent API crash
+      while (mappedHistory.length > 0 && mappedHistory[0].role === "model") {
+        mappedHistory.shift();
+      }
+      history = mappedHistory;
     } catch (e) {}
 
-    // 5. Gemini Call
-    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
-    const chat = ai.chats.create({
-      model: "gemini-2.5-flash",
-      config: {
-        systemInstruction: { parts: systemParts },
-        temperature: 0.2, // Low temp for strict adherence
-        tools: [{ googleSearch: {} }],
-      },
-      history: history,
+    // --- EXECUTION (SIMPLE & FAST) ---
+    const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
+
+    // USING ONLY FLASH LITE AS REQUESTED
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash-lite",
+      systemInstruction: systemInstructionText,
     });
 
-    const result = await chat.sendMessage({ message });
-    let responseText = result.text;
+    const chat = model.startChat({
+      history: history,
+      generationConfig: {
+        maxOutputTokens: 800,
+        temperature: 0.7,
+      },
+    });
 
-    // Sources
-    const chunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    if (chunks?.length) {
-      const links = chunks
-        .map((c) =>
-          c.web?.uri && c.web?.title ? `[${c.web.title}](${c.web.uri})` : null
-        )
-        .filter(Boolean);
-      if (links.length)
-        responseText += `\n\n**Sources:**\n${[...new Set(links)].join("\n")}`;
-    }
+    const result = await chat.sendMessage(message);
+    const responseText = result.response.text();
 
-    // 6. Save
+    // --- SAVE ---
     const ops = [
       prisma.chatMessage.create({
         data: { chatbotId, role: "user", content: message },
@@ -206,15 +140,15 @@ STRICT RULES:
 
     return Response.json({ message: responseText });
   } catch (error) {
-    console.error("[v0] Chat API Error:", error);
-    if (error.status === 429) {
+    console.error("Chat Error:", error);
+    if (error.message?.includes("429")) {
       return Response.json(
-        { error: "System busy. Please retry." },
+        { error: "High traffic. Please try again in a moment." },
         { status: 429 }
       );
     }
     return Response.json(
-      { error: "Failed to process message." },
+      { error: "Failed to generate response." },
       { status: 500 }
     );
   }

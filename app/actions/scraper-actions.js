@@ -18,7 +18,7 @@ export async function scrapeWebsite(url) {
           "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
       },
       redirect: "follow",
-      next: { revalidate: 300 }, // Cache for 5 mins for live testing
+      next: { revalidate: 300 }, // Cache for 5 mins
     });
 
     clearTimeout(timeoutId);
@@ -29,12 +29,12 @@ export async function scrapeWebsite(url) {
 
     let html = await response.text();
 
-    // SPA Detection (React/Next.js empty shells)
+    // SPA Detection
     if (
       html.includes("You need to enable JavaScript to run this app") ||
       html.length < 500
     ) {
-      return `[SYSTEM WARNING]: The website ${url} appears to be a Single Page Application (SPA) hidden behind JavaScript. I cannot read its content directly with the current scraper. Please rely on Google Search or ask the user to copy-paste the text.`;
+      return `[SYSTEM WARNING]: The website ${url} appears to be a Single Page Application (SPA). I cannot read its content directly. Please rely on Google Search.`;
     }
 
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
@@ -52,7 +52,8 @@ export async function scrapeWebsite(url) {
     html = html.replace(/<[^>]+>/g, " "); // Strip all tags
     html = html.replace(/\s+/g, " ").trim(); // Collapse whitespace
 
-    const limit = 25000;
+    // Reduced limit to prevent Model Overload
+    const limit = 20000;
     const cleanText = html.substring(0, limit);
 
     return `

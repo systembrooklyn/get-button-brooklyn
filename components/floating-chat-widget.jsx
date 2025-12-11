@@ -31,9 +31,8 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  // LAZY INITIALIZATION: This runs exactly once when the component mounts (or remounts due to key change).
-  // This guarantees we load the CORRECT chat history for THIS specific chatbot ID immediately.
-  const [messages, setMessages] = useState(() => {
+  // Initialize messages state
+  const getInitialMessages = () => {
     if (typeof window === "undefined" || !chatbot?.id) return [];
 
     const key = `chat_${chatbot.id}`;
@@ -53,12 +52,22 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
       console.error("Failed to parse chat history", e);
     }
     return [initialMsg];
-  });
+  };
 
+  const [messages, setMessages] = useState(getInitialMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isLimitReachedState, setIsLimitReachedState] = useState(false);
+
+  // STRICTLY RESET STATE WHEN CHATBOT ID CHANGES
+  // This fixes the bug where switching bots kept the old chat history
+  useEffect(() => {
+    setMessages(getInitialMessages());
+    setInput("");
+    setError("");
+    setLoading(false);
+  }, [chatbot?.id]);
 
   // Check limits on mount/update
   useEffect(() => {
@@ -149,7 +158,7 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
 
       if (response.status === 429 || response.status === 503) {
         const data = await response.json().catch(() => ({}));
-        setError(data.error || "Server busy. Please try again.");
+        setError(data.error || "System is busy. Retrying...");
         return;
       }
 
