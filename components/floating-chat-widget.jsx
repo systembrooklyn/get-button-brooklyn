@@ -26,49 +26,63 @@ const linkify = (text) => {
   });
 };
 
-export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
-  // Session handling for client-side persistence only
-  const [messages, setMessages] = useState(() => {
-    if (typeof window === "undefined") return [];
+export function FloatingChatWidget({ chatbot, onClose }) {
+  // IMPORTANT: This component is keyed by ID in the parent.
+  // It should remount when switching bots.
 
-    const initialMsg = {
-      id: 1,
-      role: "assistant",
-      content: chatbot?.greetingMessage || "Hello! How can I help you today?",
-    };
-
-    const saved = localStorage.getItem(`chat_${chatbot?.id}`);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return [initialMsg];
-      }
-    }
-    return [initialMsg];
-  });
-
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isLimitReachedState, setIsLimitReachedState] = useState(false);
+
+  // Safety ref to prevent saving data to the wrong key if props change without unmount
+  const currentChatbotIdRef = useRef(chatbot?.id);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
   const accentColor = chatbot?.color || "#2563eb";
 
-  // Check limit state on mount/update - use messageCount directly from chatbot
+  // 1. Initialize Logic
   useEffect(() => {
+    if (!chatbot?.id) return;
+
+    currentChatbotIdRef.current = chatbot.id;
+
+    // Load from local storage or set initial greeting
+    const key = `chat_${chatbot.id}`;
+    const saved = localStorage.getItem(key);
+
+    if (saved) {
+      try {
+        setMessages(JSON.parse(saved));
+      } catch {
+        setMessages([getInitialMessage()]);
+      }
+    } else {
+      setMessages([getInitialMessage()]);
+    }
+
+    // Check limits
     const limit = chatbot?.messagesLimit || 20;
     const count = chatbot?.messageCount || 0;
-    if (count >= limit) {
-      setIsLimitReachedState(true);
-    } else {
-      setIsLimitReachedState(false);
-    }
-  }, [chatbot]);
+    setIsLimitReachedState(count >= limit);
 
+    // Focus input
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+  }, [chatbot.id]);
+
+  const getInitialMessage = () => ({
+    id: 1,
+    role: "assistant",
+    content: chatbot?.greetingMessage || "Hello! How can I help you today?",
+    createdAt: new Date().toISOString(),
+  });
+
+  // 2. Scroll Logic
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -77,18 +91,17 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
     scrollToBottom();
   }, [messages, loading]);
 
-  // Persist Chat in LocalStorage
+  // 3. Persistence Logic (With Safety Check)
   useEffect(() => {
-    if (typeof window !== "undefined" && chatbot?.id) {
+    // Only save if the current messages actually belong to the current chatbot ID
+    if (
+      chatbot?.id &&
+      currentChatbotIdRef.current === chatbot.id &&
+      messages.length > 0
+    ) {
       localStorage.setItem(`chat_${chatbot.id}`, JSON.stringify(messages));
     }
   }, [messages, chatbot?.id]);
-
-  useEffect(() => {
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 100);
-  }, []);
 
   const renderAvatar = (size = "md") => {
     const sizeClass = size === "sm" ? "w-8 h-8" : "w-10 h-10";
@@ -140,10 +153,15 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
         }),
       });
 
-      // Handle specific limit error status from API (403)
       if (response.status === 403) {
         setIsLimitReachedState(true);
-        // Alert user briefly but keep the modal up
+        setError("Message limit reached.");
+        return;
+      }
+
+      if (response.status === 429 || response.status === 503) {
+        const data = await response.json().catch(() => ({}));
+        setError(data.error || "High traffic. Please try again.");
         return;
       }
 
@@ -162,10 +180,7 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // CRITICAL: Notify parent to refresh usage stats dynamically from DB
-      if (onMessageSent) {
-        await onMessageSent();
-      }
+      // Note: We DO NOT call a refresh callback here to avoid global lag.
     } catch (err) {
       setError(err.message);
     } finally {
@@ -175,17 +190,12 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
 
   const handleClearChat = () => {
     if (confirm("Start a new conversation?")) {
-      const initialMsg = {
-        id: Date.now(),
-        role: "assistant",
-        content: chatbot?.greetingMessage || "Hello! How can I help you today?",
-        createdAt: new Date().toISOString(),
-      };
-      setMessages([initialMsg]);
+      setMessages([getInitialMessage()]);
       localStorage.removeItem(`chat_${chatbot?.id}`);
       setError("");
-      setIsLimitReachedState(false); // Reset visual state, though DB might still be limited
-      if (onMessageSent) onMessageSent(); // Sync real limit status
+      if (!chatbot.messageCount >= chatbot.messagesLimit) {
+        setIsLimitReachedState(false);
+      }
     }
   };
 
@@ -347,7 +357,7 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
                   You have reached your limit messages count
                 </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  pls upgrade to enjoy more
+                  Upgrade to enjoy unlimited messages
                 </p>
                 <button
                   className="w-full text-sm text-white px-4 py-3 rounded-lg font-bold hover:opacity-90 transition-opacity shadow-md"

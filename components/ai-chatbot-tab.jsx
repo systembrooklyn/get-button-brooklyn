@@ -343,6 +343,7 @@ export default function AIChatbotTab({ chatbots, userId, onRefresh }) {
 
       {testingChatbot && (
         <FloatingChatWidget
+          key={testingChatbot.id}
           chatbot={testingChatbot}
           onClose={() => setTestingChatbotId(null)}
           onMessageSent={onRefresh} // Trigger global refresh when a message is sent
