@@ -346,7 +346,7 @@ export default function AIChatbotTab({ chatbots, userId, onRefresh }) {
           key={testingChatbot.id}
           chatbot={testingChatbot}
           onClose={() => setTestingChatbotId(null)}
-          onMessageSent={onRefresh} // Trigger global refresh when a message is sent
+          // Removed onMessageSent={onRefresh} to avoid loop
         />
       )}
     </div>
