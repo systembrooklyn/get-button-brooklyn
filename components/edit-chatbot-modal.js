@@ -42,10 +42,22 @@ export default function EditChatbotModal({
   });
 
   const PERSONALITY_OPTIONS = [
-    { id: "friendly", name: "Friendly", desc: "Warm, enthusiastic, uses emojis" },
-    { id: "professional", name: "Professional", desc: "Formal, respectful, corporate" },
+    {
+      id: "friendly",
+      name: "Friendly",
+      desc: "Warm, enthusiastic, uses emojis",
+    },
+    {
+      id: "professional",
+      name: "Professional",
+      desc: "Formal, respectful, corporate",
+    },
     { id: "direct", name: "Direct", desc: "Concise, straight to the point" },
-    { id: "empathetic", name: "Empathetic", desc: "Caring, supportive, understanding" },
+    {
+      id: "empathetic",
+      name: "Empathetic",
+      desc: "Caring, supportive, understanding",
+    },
     { id: "humorous", name: "Humorous", desc: "Witty, fun, lighthearted" },
   ];
 
@@ -240,18 +252,18 @@ export default function EditChatbotModal({
         <div className="space-y-6 py-4">
           {/* Tab Navigation */}
           <div className="flex gap-6 border-b border-border overflow-x-auto">
-             {["general", "personality", "datasources", "prompt"].map((s) => (
-                <button
-                    key={s}
-                    onClick={() => setStep(s)}
-                    className={`pb-3 text-sm font-bold whitespace-nowrap transition-all uppercase ${
-                        step === s
-                        ? "border-b-2 border-accent text-accent"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                >
-                    {s}
-                </button>
+            {["general", "personality", "datasources", "prompt"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setStep(s)}
+                className={`pb-3 text-sm font-bold whitespace-nowrap transition-all uppercase ${
+                  step === s
+                    ? "border-b-2 border-accent text-accent"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {s}
+              </button>
             ))}
           </div>
 
@@ -259,76 +271,80 @@ export default function EditChatbotModal({
           {step === "general" && (
             <div className="space-y-6 animate-in fade-in">
               <div className="flex flex-col sm:flex-row gap-6">
-                 {/* Avatar Upload */}
+                {/* Avatar Upload */}
                 <div className="flex-shrink-0">
-                    <div
-                        onClick={() => fileInputRef.current?.click()}
-                        className="w-24 h-24 rounded-full border-2 border-dashed border-accent/50 flex items-center justify-center cursor-pointer hover:border-accent transition-all group overflow-hidden relative"
-                    >
-                        {avatarPreview ? (
-                        <img
-                            src={avatarPreview || "/placeholder.svg"}
-                            alt="Avatar preview"
-                            className="w-full h-full object-cover"
-                        />
-                        ) : (
-                        <div className="text-center p-2">
-                            <Upload className="w-6 h-6 text-accent/70 mx-auto mb-1 group-hover:text-accent" />
-                            <p className="text-[10px] text-muted-foreground">Change</p>
-                        </div>
-                        )}
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleAvatarUpload}
-                            accept="image/*"
-                            className="hidden"
-                        />
-                    </div>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-24 h-24 rounded-full border-2 border-dashed border-accent/50 flex items-center justify-center cursor-pointer hover:border-accent transition-all group overflow-hidden relative"
+                  >
+                    {avatarPreview ? (
+                      <img
+                        src={avatarPreview || "/placeholder.svg"}
+                        alt="Avatar preview"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-center p-2">
+                        <Upload className="w-6 h-6 text-accent/70 mx-auto mb-1 group-hover:text-accent" />
+                        <p className="text-[10px] text-muted-foreground">
+                          Change
+                        </p>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleAvatarUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex-1 space-y-4">
-                    <div>
-                        <label className="text-sm font-semibold text-foreground block mb-2">
-                            Name
-                        </label>
-                        <input
-                            type="text"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-2.5 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-sm font-semibold text-foreground block mb-2">
-                            Tagline
-                        </label>
-                        <input
-                            type="text"
-                            name="tagline"
-                            value={formData.tagline}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-2.5 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
-                        />
-                    </div>
+                  <div>
+                    <label className="text-sm font-semibold text-foreground block mb-2">
+                      Name
+                    </label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-foreground block mb-2">
+                      Tagline
+                    </label>
+                    <input
+                      type="text"
+                      name="tagline"
+                      value={formData.tagline}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
                 </div>
               </div>
 
-               <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-semibold text-foreground block mb-2">
                     Primary Color
                   </label>
                   <div className="flex items-center gap-3">
-                      <input 
-                        type="color" 
-                        name="color"
-                        value={formData.color}
-                        onChange={handleInputChange}
-                        className="h-10 w-20 p-1 bg-background border border-border rounded cursor-pointer"
-                      />
-                      <span className="text-sm font-mono text-muted-foreground">{formData.color}</span>
+                    <input
+                      type="color"
+                      name="color"
+                      value={formData.color}
+                      onChange={handleInputChange}
+                      className="h-10 w-20 p-1 bg-background border border-border rounded cursor-pointer"
+                    />
+                    <span className="text-sm font-mono text-muted-foreground">
+                      {formData.color}
+                    </span>
                   </div>
                 </div>
 
@@ -352,56 +368,71 @@ export default function EditChatbotModal({
               </div>
 
               <div>
-                  <label className="text-sm font-semibold text-foreground block mb-2">
-                    Greeting Message
-                  </label>
-                  <textarea
-                    name="greetingMessage"
-                    value={formData.greetingMessage}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent resize-none"
-                    rows="3"
-                  />
+                <label className="text-sm font-semibold text-foreground block mb-2">
+                  Greeting Message
+                </label>
+                <textarea
+                  name="greetingMessage"
+                  value={formData.greetingMessage}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent resize-none"
+                  rows="3"
+                />
               </div>
             </div>
           )}
 
-           {/* Step 2: Personality */}
-           {step === "personality" && (
-              <div className="space-y-6 animate-in fade-in">
-                  <div className="grid sm:grid-cols-2 gap-4">
-                      {PERSONALITY_OPTIONS.map((option) => (
-                          <div 
-                            key={option.id}
-                            onClick={() => setFormData(prev => ({ ...prev, personality: option.id }))}
-                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                                formData.personality === option.id 
-                                ? "border-accent bg-accent/5" 
-                                : "border-border hover:border-accent/50"
-                            }`}
-                          >
-                              <div className="flex items-center gap-2 mb-1">
-                                  <Sparkles className={`w-4 h-4 ${formData.personality === option.id ? "text-accent" : "text-muted-foreground"}`} />
-                                  <h3 className="font-bold text-foreground">{option.name}</h3>
-                              </div>
-                              <p className="text-xs text-muted-foreground">{option.desc}</p>
-                          </div>
-                      ))}
+          {/* Step 2: Personality */}
+          {step === "personality" && (
+            <div className="space-y-6 animate-in fade-in">
+              <div className="grid sm:grid-cols-2 gap-4">
+                {PERSONALITY_OPTIONS.map((option) => (
+                  <div
+                    key={option.id}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        personality: option.id,
+                      }))
+                    }
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      formData.personality === option.id
+                        ? "border-accent bg-accent/5"
+                        : "border-border hover:border-accent/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <Sparkles
+                        className={`w-4 h-4 ${
+                          formData.personality === option.id
+                            ? "text-accent"
+                            : "text-muted-foreground"
+                        }`}
+                      />
+                      <h3 className="font-bold text-foreground">
+                        {option.name}
+                      </h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {option.desc}
+                    </p>
                   </div>
-
-                  <div>
-                    <label className="text-sm font-semibold text-foreground block mb-2">
-                        Suggested Messages
-                    </label>
-                    <textarea
-                        name="suggestedMessages"
-                        value={formData.suggestedMessages}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent resize-none"
-                        rows="4"
-                    />
-                  </div>
+                ))}
               </div>
+
+              <div>
+                <label className="text-sm font-semibold text-foreground block mb-2">
+                  Suggested Messages
+                </label>
+                <textarea
+                  name="suggestedMessages"
+                  value={formData.suggestedMessages}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent resize-none"
+                  rows="4"
+                />
+              </div>
+            </div>
           )}
 
           {/* Step 3: Data Sources */}
@@ -411,12 +442,12 @@ export default function EditChatbotModal({
                 <label className="text-sm font-semibold text-foreground block mb-2">
                   Training Files
                 </label>
-                <div 
-                    onClick={() => trainingFileRef.current?.click()}
-                    className="border-2 border-dashed border-border rounded-xl p-6 text-center hover:bg-accent/5 hover:border-accent transition-colors cursor-pointer"
+                <div
+                  onClick={() => trainingFileRef.current?.click()}
+                  className="border-2 border-dashed border-border rounded-xl p-6 text-center hover:bg-accent/5 hover:border-accent transition-colors cursor-pointer"
                 >
-                    <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm font-medium">Add more files</p>
+                  <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm font-medium">Add more files</p>
                 </div>
 
                 <input

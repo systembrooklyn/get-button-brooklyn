@@ -1,10 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { scrapeWebsite } from "@/app/actions/scraper-actions";
+import { GoogleGenAI } from "@google/genai";
 
-// API KEY
-const GOOGLE_API_KEY = "AIzaSyBNb9Oh105c8xDVY069ZMgly_RtH86ydnw";
 const ADMIN_UID = "a1941b27-d783-45f0-bf73-f531a6394f02";
 
 export async function POST(req) {
@@ -26,175 +23,146 @@ export async function POST(req) {
     if (!chatbot)
       return Response.json({ error: "Chatbot not found" }, { status: 404 });
 
-    // UNLIMITED ACCESS CHECK
+    // Limit Check
     const isTestUser = user?.email === "test@test.com";
     const isAdmin = user?.id === ADMIN_UID || isTestUser;
 
-    // Enforce limits only for non-admins
-    if (!isAdmin && chatbot.messageCount >= (chatbot.messagesLimit || 20)) {
+    if (!isAdmin) {
+      const count = await prisma.chatMessage.count({ where: { chatbotId } });
+      if (count >= (chatbot.messagesLimit || 20)) {
+        return Response.json(
+          { error: "Message limit reached." },
+          { status: 403 }
+        );
+      }
+    }
+
+    const apiKey = process.env.API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      console.error("[v0] API Key not found");
       return Response.json(
-        { error: "Message limit reached." },
-        { status: 403 }
+        { error: "Server Configuration Error" },
+        { status: 500 }
       );
     }
 
-    // --- SYSTEM PROMPT ---
-    let systemInstructionText = `You are ${chatbot.name || "AI"}. ${
-      chatbot.tagline || ""
-    }. 
-Personality: ${chatbot.personality || "Friendly"}.
-Format: Markdown. Keep answers concise.`;
-
-    // Knowledge Base
-    if (chatbot.systemPrompt) {
-      systemInstructionText += `\n\n=== KNOWLEDGE BASE ===\n${chatbot.systemPrompt.substring(
-        0,
-        5000
-      )}`;
-    }
-
-    // Files (Text Only, Simple)
-    if (chatbot.trainingFiles) {
-      try {
-        const files = JSON.parse(chatbot.trainingFiles);
-        for (const file of files) {
-          // Decode text-based files only, skip images to keep it lite
-          if (file.data && !file.type.startsWith("image/")) {
-            const base64 = file.data.includes(",")
-              ? file.data.split(",")[1]
-              : file.data;
-            const txt = Buffer.from(base64, "base64").toString("utf-8");
-            if (txt.trim()) {
-              systemInstructionText += `\n\n--- FILE: ${
-                file.name
-              } ---\n${txt.substring(0, 5000)}\n`;
-            }
-          }
-        }
-      } catch (e) {
-        console.error("File parse error", e);
-      }
-    }
-
-    // SCRAPER INSTRUCTION (Critical for preventing hallucinations)
-    if (chatbot.dataSourceUrl) {
-      systemInstructionText += `
-\n=== DATA SOURCE TOOL ===
-You are connected to: ${chatbot.dataSourceUrl}
-If the user asks for specific information (like prices, features, location, recent news) and it is NOT present in the knowledge base or files above:
-Reply with EXACTLY: [[SCRAPE_DATASOURCE]]
-Do not answer the question yet. Do not add any other text.
-`;
-    }
-
-    // --- HISTORY ---
-    let history = [];
-    try {
-      const rawHistory = await prisma.chatMessage.findMany({
-        where: { chatbotId },
-        take: 10,
-        orderBy: { createdAt: "desc" },
-      });
-
-      // Convert to Gemini format
-      const mappedHistory = rawHistory.reverse().map((msg) => ({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content.substring(0, 1000) }],
-      }));
-
-      // CRITICAL FIX: Remove leading model messages to prevent API crash
-      while (mappedHistory.length > 0 && mappedHistory[0].role === "model") {
-        mappedHistory.shift();
-      }
-      history = mappedHistory;
-    } catch (e) {}
-
-    // --- EXECUTION (SIMPLE & FAST) ---
-    const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
-
-    // USING ONLY FLASH LITE AS REQUESTED
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
-      systemInstruction: systemInstructionText,
+    const allSources = await prisma.knowledgeSource.findMany({
+      where: {
+        chatbotId,
+        isActive: true,
+        // Exclude error/failed crawl sources
+        title: {
+          notIn: ["Crawl Failed", "Crawl Error"],
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20, // Reduced from 25 for better performance
     });
 
-    const chat = model.startChat({
+    console.log(
+      `[v0] Chatbot ${chatbotId}: Found ${allSources.length} valid knowledge sources`
+    );
+
+    let contextData = "";
+
+    if (allSources.length > 0) {
+      contextData = allSources
+        .map((s, i) => {
+          return `
+=== SOURCE ${i + 1}: ${s.title} ===
+Type: ${s.type}
+URL: ${s.url}
+
+${s.content}
+---
+`;
+        })
+        .join("\n\n");
+    } else {
+      console.warn("[v0] No valid knowledge sources found for chatbot");
+      contextData = "SYSTEM: No knowledge base data is currently available.";
+    }
+
+    const systemInstruction = `You are ${chatbot.name || "AI Assistant"}. ${
+      chatbot.tagline || ""
+    }
+
+Personality: ${chatbot.personality || "Friendly and helpful"}
+Language: Respond in ${chatbot.botLanguage || "English"}
+
+${chatbot.systemPrompt ? `Custom Instructions:\n${chatbot.systemPrompt}\n` : ""}
+
+=== KNOWLEDGE BASE ===
+${contextData}
+=== END KNOWLEDGE BASE ===
+
+CRITICAL RULES:
+${
+  allSources.length === 0
+    ? `1. NO KNOWLEDGE BASE DATA IS AVAILABLE. You do not have access to any website content yet.
+2. When asked about anything specific, respond: "I don't have that information in my knowledge base yet. Please contact us directly for assistance."
+3. Be polite and apologetic about the limitation.
+4. NEVER make up or guess information.`
+    : `1. Answer questions ONLY using information from the Knowledge Base above.
+2. If the specific information is not in the Knowledge Base, respond with: "I don't have that specific information in my knowledge base. Please contact us directly or visit ${
+        chatbot.dataSourceUrl || "our website"
+      } for more details."
+3. Be concise, helpful, and conversational.
+4. Use clear formatting for better readability.
+5. NEVER make up information - only use what's provided in the Knowledge Base.
+6. When information IS available, be confident and helpful in your response.`
+}
+`;
+
+    const recentMessages = await prisma.chatMessage.findMany({
+      where: { chatbotId },
+      take: 8,
+      orderBy: { createdAt: "desc" },
+    });
+
+    const history = recentMessages.reverse().map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content.substring(0, 1000) }],
+    }));
+
+    // Generate Response
+    const ai = new GoogleGenAI({ apiKey });
+    const chat = ai.chats.create({
+      model: "gemini-2.5-flash",
       history: history,
-      generationConfig: {
-        maxOutputTokens: 800,
+      config: {
+        systemInstruction: systemInstruction,
         temperature: 0.7,
+        maxOutputTokens: 1000,
       },
     });
 
-    let result = await chat.sendMessage(message);
-    let responseText = result.response.text().trim();
+    const result = await chat.sendMessage({ message });
+    const responseText = result.text.trim();
 
-    // --- CHECK FOR SCRAPE TRIGGER ---
-    // If the model asks to scrape, we do it now, then send the content back to the model.
-    if (
-      responseText.includes("[[SCRAPE_DATASOURCE]]") &&
-      chatbot.dataSourceUrl
-    ) {
-      console.log(
-        `[v0] ⚡ Model requested scrape for: ${chatbot.dataSourceUrl}`
-      );
-
-      // 1. Scrape
-      const scrapedData = await scrapeWebsite(chatbot.dataSourceUrl);
-
-      // 2. Truncate (Optimize tokens: ~4000 chars is safe for Lite context)
-      const safeContent = scrapedData ? scrapedData.substring(0, 4000) : "";
-
-      if (!safeContent) {
-        responseText =
-          "I tried to check the website, but I couldn't access the content right now. Please check the URL.";
-      } else {
-        // 3. Feed back to model
-        const followUpPrompt = `
-[SYSTEM: REAL-TIME WEBSITE CONTENT]
-${safeContent}
-
-[INSTRUCTION]
-Using ONLY the content above, answer the user's question: "${message}".
-Be concise and direct.
-`;
-        const finalResult = await chat.sendMessage(followUpPrompt);
-        responseText = finalResult.response.text();
-      }
-    }
-
-    // --- SAVE ---
-    const ops = [
-      prisma.chatMessage.create({
-        data: { chatbotId, role: "user", content: message },
-      }),
-      prisma.chatMessage.create({
-        data: { chatbotId, role: "assistant", content: responseText },
-      }),
-    ];
-
-    if (!isAdmin) {
-      ops.push(
-        prisma.chatbot.update({
-          where: { id: chatbotId },
-          data: { messageCount: { increment: 1 } },
-        })
-      );
-    }
-
-    await prisma.$transaction(ops);
+    // Save to DB
+    await prisma.$transaction(
+      [
+        prisma.chatMessage.create({
+          data: { chatbotId, role: "user", content: message },
+        }),
+        prisma.chatMessage.create({
+          data: { chatbotId, role: "assistant", content: responseText },
+        }),
+        !isAdmin
+          ? prisma.chatbot.update({
+              where: { id: chatbotId },
+              data: { messageCount: { increment: 1 } },
+            })
+          : null,
+      ].filter(Boolean)
+    );
 
     return Response.json({ message: responseText });
   } catch (error) {
-    console.error("Chat Error:", error);
-    if (error.message?.includes("429")) {
-      return Response.json(
-        { error: "High traffic. Please try again in a moment." },
-        { status: 429 }
-      );
-    }
+    console.error("[v0] Chat Error:", error);
     return Response.json(
-      { error: "Failed to generate response." },
+      { error: "Failed to process request" },
       { status: 500 }
     );
   }

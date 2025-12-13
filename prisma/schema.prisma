@@ -42,26 +42,54 @@ model Chatbot {
   tagline         String @default("")
   greetingMessage String @default("Hello! How can I help?")
   avatar          String @default("")
-  systemPrompt    String @db.Text
+  systemPrompt    String
   dataSourceUrl   String @default("")
-  botLanguage     String @default("en")
 
-  // New Fields for UI/UX
+  // Legacy field kept for backward compatibility
+  knowledgeBase String @default("")
+
+  botLanguage String @default("en")
   color       String @default("#2563eb")
   personality String @default("friendly")
 
-  suggestedMessages String        @default("") @db.Text
-  sendMessageText   String        @default("Send")
-  trainingFiles     String        @default("") @db.Text
-  messageCount      Int           @default(0)
-  messagesLimit     Int           @default(20)
-  isActive          Boolean       @default(true)
-  messages          ChatMessage[]
-  createdAt         DateTime      @default(now()) @map("createdAt")
-  updatedAt         DateTime      @updatedAt @map("updatedAt")
+  suggestedMessages String  @default("")
+  sendMessageText   String  @default("Send")
+  trainingFiles     String  @default("")
+  messageCount      Int     @default(0)
+  messagesLimit     Int     @default(20)
+  isActive          Boolean @default(true)
+
+  messages ChatMessage[]
+
+  // === NEW RELATIONSHIP FOR MULTI-PAGE CRAWLING ===
+  knowledgeSources KnowledgeSource[]
+
+  createdAt DateTime @default(now()) @map("createdAt")
+  updatedAt DateTime @updatedAt @map("updatedAt")
 
   @@index([userId])
   @@map("chatbots")
+}
+
+// === NEW MODEL FOR STRUCTURED KNOWLEDGE ===
+model KnowledgeSource {
+  id        String  @id @default(cuid())
+  chatbotId String
+  chatbot   Chatbot @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+
+  type    String @default("web") // "web", "file"
+  url     String // The specific URL of the page or filename
+  title   String // Page title
+  content String // The actual text content
+
+  lastCrawled DateTime @default(now())
+  isActive    Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([chatbotId])
+  @@map("knowledge_sources")
 }
 
 model ChatMessage {
@@ -69,7 +97,7 @@ model ChatMessage {
   chatbotId String
   chatbot   Chatbot  @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
   role      String
-  content   String   @db.Text
+  content   String
   createdAt DateTime @default(now()) @map("createdAt")
 
   @@index([chatbotId])
