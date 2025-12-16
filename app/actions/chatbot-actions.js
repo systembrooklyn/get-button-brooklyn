@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/utils/supabase/server";
 import { crawlDomain } from "@/utils/crawler";
+import { GoogleGenAI } from "@google/genai";
 
 export async function createChatbot(data) {
   const supabase = await createClient();
@@ -56,7 +57,7 @@ export async function createChatbot(data) {
       personality: personality || "friendly",
       suggestedMessages: suggestedMessages || "",
       sendMessageText: sendMessageText || "Send",
-      trainingFiles: trainingFiles || "",
+      trainingFiles: "[]", // Keep column empty/minimal to save DB space
     },
   });
 
@@ -119,23 +120,8 @@ Solutions:
   if (trainingFiles) {
     try {
       const files = JSON.parse(trainingFiles);
-      const fileSources = [];
-
-      for (const file of files) {
-        if (file.data) {
-          const base64 = file.data.includes(",")
-            ? file.data.split(",")[1]
-            : file.data;
-          const text = Buffer.from(base64, "base64").toString("utf-8");
-          fileSources.push({
-            chatbotId: chatbot.id,
-            type: "file",
-            url: `file://${file.name}`,
-            title: sanitizeForDatabase(file.name),
-            content: sanitizeForDatabase(text),
-          });
-        }
-      }
+      // Create - all files are new
+      const fileSources = await processNewFiles(files, chatbot.id);
 
       if (fileSources.length > 0) {
         await prisma.knowledgeSource.createMany({ data: fileSources });
@@ -172,10 +158,11 @@ export async function updateChatbot(chatbotId, data) {
       suggestedMessages: data.suggestedMessages,
       botLanguage: data.botLanguage,
       dataSourceUrl: data.dataSourceUrl,
-      trainingFiles: data.trainingFiles,
+      trainingFiles: "[]",
     },
   });
 
+  // Handle URL Changes
   if (data.dataSourceUrl && data.dataSourceUrl !== chatbot.dataSourceUrl) {
     console.log(
       "[v0] URL changed, re-crawling website for:",
@@ -230,35 +217,31 @@ export async function updateChatbot(chatbotId, data) {
     }
   }
 
+  // Handle Training Files (Differential Update)
   if (data.trainingFiles) {
     try {
-      // Delete old file sources
+      const filesList = JSON.parse(data.trainingFiles);
+
+      // 1. Identify Existing Files (Have an 'id')
+      const existingIdsToKeep = filesList.filter((f) => f.id).map((f) => f.id);
+
+      // 2. Delete Removed Files (Type 'file' but ID not in keep list)
       await prisma.knowledgeSource.deleteMany({
-        where: { chatbotId, type: "file" },
+        where: {
+          chatbotId,
+          type: "file",
+          id: { notIn: existingIdsToKeep },
+        },
       });
 
-      const files = JSON.parse(data.trainingFiles);
-      const fileSources = [];
+      // 3. Add New Files (No 'id', has 'data')
+      const newFiles = filesList.filter((f) => !f.id && f.data);
 
-      for (const file of files) {
-        if (file.data) {
-          const base64 = file.data.includes(",")
-            ? file.data.split(",")[1]
-            : file.data;
-          const text = Buffer.from(base64, "base64").toString("utf-8");
-          fileSources.push({
-            chatbotId,
-            type: "file",
-            url: `file://${file.name}`,
-            title: sanitizeForDatabase(file.name),
-            content: sanitizeForDatabase(text),
-          });
-        }
-      }
+      const fileSources = await processNewFiles(newFiles, chatbotId);
 
       if (fileSources.length > 0) {
         await prisma.knowledgeSource.createMany({ data: fileSources });
-        console.log(`[v0] Updated ${fileSources.length} files`);
+        console.log(`[v0] Added ${fileSources.length} new files`);
       }
     } catch (e) {
       console.error("[v0] File update error:", e);
@@ -285,6 +268,7 @@ export async function deleteChatbot(chatbotId) {
 export async function getChatbotByUserId(userId) {
   return prisma.chatbot.findMany({
     where: { userId },
+    include: { knowledgeSources: true },
     orderBy: { createdAt: "desc" },
   });
 }
@@ -292,7 +276,10 @@ export async function getChatbotByUserId(userId) {
 export async function getChatbotById(id) {
   return prisma.chatbot.findUnique({
     where: { id },
-    include: { messages: true },
+    include: {
+      messages: true,
+      knowledgeSources: true,
+    },
   });
 }
 
@@ -305,6 +292,79 @@ export async function getChatbotMessages(chatbotId) {
     where: { chatbotId },
     orderBy: { createdAt: "asc" },
   });
+}
+
+// === HELPERS ===
+
+async function processNewFiles(files, chatbotId) {
+  if (!files || files.length === 0) return [];
+
+  const results = await Promise.all(
+    files.map(async (file) => {
+      if (!file.data) return null;
+
+      let mimeType = "text/plain";
+      let base64 = file.data;
+
+      // Handle Data URL if present (remove prefix)
+      // Format: data:image/png;base64,.....
+      if (file.data.includes(",")) {
+        const parts = file.data.split(",");
+        const match = parts[0].match(/:(.*?);/);
+        if (match) mimeType = match[1];
+        base64 = parts[1];
+      }
+
+      const text = await extractTextFromFile(base64, mimeType, file.name);
+
+      return {
+        chatbotId,
+        type: "file",
+        url: `file://${file.name}`,
+        title: sanitizeForDatabase(file.name),
+        content: sanitizeForDatabase(text),
+      };
+    })
+  );
+
+  return results.filter(Boolean);
+}
+
+async function extractTextFromFile(base64, mimeType, fileName) {
+  // 1. Text formats - decode directly to avoid AI cost/latency
+  if (
+    mimeType.startsWith("text/") ||
+    mimeType.includes("json") ||
+    mimeType.includes("csv") ||
+    mimeType.includes("xml") ||
+    mimeType.includes("javascript")
+  ) {
+    return Buffer.from(base64, "base64").toString("utf-8");
+  }
+
+  // 2. Gemini extraction for PDF/Image
+  const apiKey = process.env.API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) return "[System: Missing API Key for file extraction]";
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    // Use flash model for speed and capability
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: {
+        parts: [
+          { inlineData: { mimeType, data: base64 } },
+          {
+            text: "Extract all text from this file verbatim. Return ONLY the text content, no markdown formatting or commentary.",
+          },
+        ],
+      },
+    });
+    return response.text || "[System: No text extracted]";
+  } catch (e) {
+    console.error(`[v0] Gemini extraction error for ${fileName}:`, e.message);
+    return `[System: Failed to extract text from ${fileName}. Error: ${e.message}]`;
+  }
 }
 
 function sanitizeForDatabase(text) {

@@ -72,9 +72,25 @@ export default function AIChatbotTab({ chatbots, userId, onRefresh }) {
   // Helper to display clean Data Source info
   const renderDataSources = (bot) => {
     const sources = [];
-    if (bot.dataSourceUrl) sources.push({ type: "url", label: "Website" });
 
-    if (bot.trainingFiles) {
+    // Check for Website Source (either via knowledgeSources or legacy field)
+    const hasWeb =
+      bot.knowledgeSources?.some((ks) => ks.type === "web") ||
+      bot.dataSourceUrl;
+    if (hasWeb) sources.push({ type: "url", label: "Website" });
+
+    // Check for File Sources
+    // Now we rely on knowledgeSources count for accuracy
+    const fileCount =
+      bot.knowledgeSources?.filter((ks) => ks.type === "file").length || 0;
+
+    if (fileCount > 0) {
+      sources.push({
+        type: "file",
+        label: `${fileCount} File${fileCount > 1 ? "s" : ""}`,
+      });
+    } else if (bot.trainingFiles && bot.trainingFiles !== "[]") {
+      // Legacy fallback (rare now)
       try {
         const files = JSON.parse(bot.trainingFiles);
         if (Array.isArray(files) && files.length > 0) {

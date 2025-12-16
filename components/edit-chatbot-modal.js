@@ -38,7 +38,6 @@ export default function EditChatbotModal({
     systemPrompt: chatbot?.systemPrompt || "",
     dataSourceUrl: chatbot?.dataSourceUrl || "",
     avatar: chatbot?.avatar || "",
-    trainingFiles: chatbot?.trainingFiles || "",
   });
 
   const PERSONALITY_OPTIONS = [
@@ -75,16 +74,21 @@ export default function EditChatbotModal({
         systemPrompt: chatbot.systemPrompt || "",
         dataSourceUrl: chatbot.dataSourceUrl || "",
         avatar: chatbot.avatar || "",
-        trainingFiles: chatbot.trainingFiles || "",
       });
       setAvatarPreview(chatbot.avatar || "");
 
-      try {
-        const files = chatbot.trainingFiles
-          ? JSON.parse(chatbot.trainingFiles)
-          : [];
-        setUploadedFiles(files);
-      } catch (e) {
+      // Hydrate files from knowledgeSources (Saved in DB) instead of potentially empty trainingFiles string
+      if (chatbot.knowledgeSources && Array.isArray(chatbot.knowledgeSources)) {
+        const existingFiles = chatbot.knowledgeSources
+          .filter((ks) => ks.type === "file")
+          .map((ks) => ({
+            id: ks.id, // Keep ID to track existence
+            name: ks.title,
+            size: 0, // Size not stored in DB, but that's okay for display
+            type: "application/pdf", // Generic fallback
+          }));
+        setUploadedFiles(existingFiles);
+      } else {
         setUploadedFiles([]);
       }
     }
@@ -157,7 +161,7 @@ export default function EditChatbotModal({
             name: file.name,
             type: file.type,
             size: file.size,
-            data: reader.result,
+            data: reader.result, // Base64 for NEW files
           });
         };
         reader.readAsDataURL(file);
@@ -166,20 +170,12 @@ export default function EditChatbotModal({
 
     const filesData = await Promise.all(filePromises);
     setUploadedFiles((prev) => [...prev, ...filesData]);
-    setFormData((prev) => ({
-      ...prev,
-      trainingFiles: JSON.stringify([...uploadedFiles, ...filesData]),
-    }));
     setError("");
   };
 
   const removeFile = (index) => {
     const newFiles = uploadedFiles.filter((_, i) => i !== index);
     setUploadedFiles(newFiles);
-    setFormData((prev) => ({
-      ...prev,
-      trainingFiles: JSON.stringify(newFiles),
-    }));
   };
 
   const handleSave = async () => {
@@ -203,7 +199,8 @@ export default function EditChatbotModal({
         systemPrompt: formData.systemPrompt,
         dataSourceUrl: formData.dataSourceUrl,
         avatar: formData.avatar,
-        trainingFiles: formData.trainingFiles,
+        // Send the mixed array of existing (id only) and new (data) files
+        trainingFiles: JSON.stringify(uploadedFiles),
       });
       if (onChatbotUpdated) {
         await onChatbotUpdated();
@@ -473,7 +470,10 @@ export default function EditChatbotModal({
                               {file.name}
                             </p>
                             <p className="text-[10px] text-muted-foreground">
-                              {(file.size / 1024).toFixed(1)} KB
+                              {file.id ? "Saved" : "New"}
+                              {file.size
+                                ? ` • ${(file.size / 1024).toFixed(1)} KB`
+                                : ""}
                             </p>
                           </div>
                         </div>
