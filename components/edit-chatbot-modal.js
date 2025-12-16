@@ -9,7 +9,16 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { updateChatbot, deleteChatbot } from "@/app/actions/chatbot-actions";
-import { Trash2, Upload, FileText, X, Sparkles } from "lucide-react";
+import {
+  Trash2,
+  Upload,
+  FileText,
+  X,
+  Sparkles,
+  Globe,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 
 export default function EditChatbotModal({
   isOpen,
@@ -23,6 +32,9 @@ export default function EditChatbotModal({
   const [error, setError] = useState("");
   const [avatarPreview, setAvatarPreview] = useState(chatbot?.avatar || "");
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [indexedPagesCount, setIndexedPagesCount] = useState(0);
+  const [crawlStatus, setCrawlStatus] = useState("idle"); // idle, success, error
+
   const fileInputRef = useRef(null);
   const trainingFileRef = useRef(null);
 
@@ -77,19 +89,35 @@ export default function EditChatbotModal({
       });
       setAvatarPreview(chatbot.avatar || "");
 
-      // Hydrate files from knowledgeSources (Saved in DB) instead of potentially empty trainingFiles string
+      // Hydrate files from knowledgeSources (Saved in DB)
       if (chatbot.knowledgeSources && Array.isArray(chatbot.knowledgeSources)) {
+        // Files
         const existingFiles = chatbot.knowledgeSources
           .filter((ks) => ks.type === "file")
           .map((ks) => ({
             id: ks.id, // Keep ID to track existence
             name: ks.title,
-            size: 0, // Size not stored in DB, but that's okay for display
-            type: "application/pdf", // Generic fallback
+            size: 0,
+            type: "application/pdf",
           }));
         setUploadedFiles(existingFiles);
+
+        // Web Pages Count
+        const webPages = chatbot.knowledgeSources.filter(
+          (ks) => ks.type === "web"
+        );
+        setIndexedPagesCount(webPages.length);
+
+        const hasError = webPages.some(
+          (p) => p.title === "Crawl Failed" || p.title === "Crawl Error"
+        );
+        if (hasError) setCrawlStatus("error");
+        else if (webPages.length > 0) setCrawlStatus("success");
+        else setCrawlStatus("idle");
       } else {
         setUploadedFiles([]);
+        setIndexedPagesCount(0);
+        setCrawlStatus("idle");
       }
     }
   }, [chatbot, isOpen]);
@@ -493,13 +521,38 @@ export default function EditChatbotModal({
                 <label className="text-sm font-semibold text-foreground block mb-2">
                   Website URL
                 </label>
-                <input
-                  type="url"
-                  name="dataSourceUrl"
-                  value={formData.dataSourceUrl}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
-                />
+                <div className="space-y-2">
+                  <input
+                    type="url"
+                    name="dataSourceUrl"
+                    value={formData.dataSourceUrl}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-accent"
+                  />
+                  {/* Website Persistence Status Indicator */}
+                  {formData.dataSourceUrl && (
+                    <div className="flex items-center gap-2 text-xs">
+                      {crawlStatus === "success" && (
+                        <span className="flex items-center gap-1.5 text-green-600 bg-green-500/10 px-2 py-1 rounded-md border border-green-500/20">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {indexedPagesCount} pages indexed & saved
+                        </span>
+                      )}
+                      {crawlStatus === "error" && (
+                        <span className="flex items-center gap-1.5 text-amber-600 bg-amber-500/10 px-2 py-1 rounded-md border border-amber-500/20">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          Warning: Some pages failed to crawl
+                        </span>
+                      )}
+                      {crawlStatus === "idle" && indexedPagesCount === 0 && (
+                        <span className="flex items-center gap-1.5 text-muted-foreground bg-secondary/50 px-2 py-1 rounded-md border border-border">
+                          <Globe className="w-3.5 h-3.5" />
+                          Pending crawl (Save to start)
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
