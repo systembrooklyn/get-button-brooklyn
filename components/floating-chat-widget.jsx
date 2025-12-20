@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   X,
   Send,
@@ -60,13 +60,13 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
   const [error, setError] = useState("");
   const [isLimitReachedState, setIsLimitReachedState] = useState(false);
 
-  // STRICTLY RESET STATE WHEN CHATBOT ID CHANGES
-  // This fixes the bug where switching bots kept the old chat history
   useEffect(() => {
+    console.log("[v0] Chatbot changed, resetting chat state");
     setMessages(getInitialMessages());
     setInput("");
     setError("");
     setLoading(false);
+    setIsLimitReachedState(false);
   }, [chatbot?.id]);
 
   // Check limits on mount/update
@@ -153,12 +153,14 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
       if (response.status === 403) {
         setIsLimitReachedState(true);
         setError("Message limit reached.");
+        setLoading(false);
         return;
       }
 
       if (response.status === 429 || response.status === 503) {
         const data = await response.json().catch(() => ({}));
         setError(data.error || "System is busy. Retrying...");
+        setLoading(false);
         return;
       }
 
@@ -172,14 +174,14 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
         id: Date.now() + 1,
         role: "assistant",
         content: data.message || "Unable to generate response.",
+        sources: data.sources,
         createdAt: new Date().toISOString(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Notify parent to refresh usage
       if (onMessageSent) {
-        onMessageSent();
+        setTimeout(() => onMessageSent(), 100);
       }
     } catch (err) {
       setError(err.message);
@@ -306,6 +308,42 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
                       dir={isMsgRtl ? "rtl" : "ltr"}
                     >
                       {renderMessageContent(msg.content)}
+
+                      {!isUser && msg.sources && msg.sources.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-border/40 space-y-1.5">
+                          <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
+                            Sources:
+                          </p>
+                          {msg.sources.map((source, sidx) => (
+                            <a
+                              key={sidx}
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-[12px] font-medium hover:underline group"
+                              style={{ color: accentColor }}
+                            >
+                              <svg
+                                className="w-3 h-3 flex-shrink-0"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                />
+                              </svg>
+                              <span className="truncate group-hover:underline">
+                                {source.title}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+
                       <span
                         className={`text-[9px] block mt-1 ${
                           isUser ? "text-white/70" : "text-muted-foreground"

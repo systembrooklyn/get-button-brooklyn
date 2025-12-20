@@ -7,16 +7,20 @@ const MAX_PAGES = 15;
 const TIMEOUT_MS = 15000;
 
 /**
- * Main crawler function - checks for existing pages before scraping
+ * Main crawler function - only checks for existing pages when re-crawling (updating)
  */
-export async function crawlDomain(startUrl, chatbotId = null) {
+export async function crawlDomain(
+  startUrl,
+  chatbotId = null,
+  isUpdate = false
+) {
   if (!startUrl) return [];
 
   console.log(`[Crawler] Starting crawl for: ${startUrl}`);
 
   try {
     // Try ScrapingBee with markdown format first
-    const pages = await crawlWithScrapingBee(startUrl, chatbotId);
+    const pages = await crawlWithScrapingBee(startUrl, chatbotId, isUpdate);
     if (pages.length > 0) {
       console.log(`[Crawler] Success with ScrapingBee: ${pages.length} pages`);
       return pages;
@@ -27,7 +31,7 @@ export async function crawlDomain(startUrl, chatbotId = null) {
 
   // Fallback to direct fetch
   try {
-    const pages = await crawlWithDirectFetch(startUrl, chatbotId);
+    const pages = await crawlWithDirectFetch(startUrl, chatbotId, isUpdate);
     if (pages.length > 0) {
       console.log(`[Crawler] Success with direct fetch: ${pages.length} pages`);
       return pages;
@@ -78,7 +82,7 @@ async function isAlreadyScraped(url, chatbotId) {
 /**
  * Strategy 1: ScrapingBee with LLM-friendly markdown format
  */
-async function crawlWithScrapingBee(startUrl, chatbotId) {
+async function crawlWithScrapingBee(startUrl, chatbotId, isUpdate = false) {
   const apiKey = process.env.SCRAPINGBEE_API_KEY;
 
   if (!apiKey) {
@@ -100,7 +104,7 @@ async function crawlWithScrapingBee(startUrl, chatbotId) {
 
     if (!normalized || visited.has(normalized)) continue;
 
-    if (await isAlreadyScraped(normalized, chatbotId)) {
+    if (isUpdate && (await isAlreadyScraped(normalized, chatbotId))) {
       console.log(`[Crawler] ✓ Already scraped: ${url}`);
       visited.add(normalized);
       continue;
@@ -109,24 +113,28 @@ async function crawlWithScrapingBee(startUrl, chatbotId) {
     visited.add(normalized);
 
     try {
-      const apiUrl = new URL("https://app.scrapingbee.com/api/v1/");
-      apiUrl.searchParams.set("api_key", apiKey);
-      apiUrl.searchParams.set("url", url);
-      apiUrl.searchParams.set("return_page_markdown", "true");
-      // Remove render_js to save credits, markdown extraction works on static HTML
+      // Get markdown for content
+      const markdownApiUrl = new URL("https://app.scrapingbee.com/api/v1/");
+      markdownApiUrl.searchParams.set("api_key", apiKey);
+      markdownApiUrl.searchParams.set("url", url);
+      markdownApiUrl.searchParams.set("return_page_markdown", "true");
 
-      console.log(`[ScrapingBee] Fetching: ${url}`);
+      console.log(
+        `[ScrapingBee] Fetching (${pages.length + 1}/${MAX_PAGES}): ${url}`
+      );
 
-      const response = await fetch(apiUrl.toString(), {
+      const markdownResponse = await fetch(markdownApiUrl.toString(), {
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
 
-      if (!response.ok) {
-        console.error(`[ScrapingBee] HTTP ${response.status} for ${url}`);
+      if (!markdownResponse.ok) {
+        console.error(
+          `[ScrapingBee] HTTP ${markdownResponse.status} for ${url}`
+        );
         continue;
       }
 
-      const markdown = await response.text();
+      const markdown = await markdownResponse.text();
 
       console.log(
         `[ScrapingBee] Received ${markdown.length} chars of markdown for ${url}`
@@ -137,7 +145,23 @@ async function crawlWithScrapingBee(startUrl, chatbotId) {
         continue;
       }
 
-      const { title, content, links } = parseMarkdown(markdown, url);
+      // Get HTML for link extraction
+      const htmlApiUrl = new URL("https://app.scrapingbee.com/api/v1/");
+      htmlApiUrl.searchParams.set("api_key", apiKey);
+      htmlApiUrl.searchParams.set("url", url);
+
+      const htmlResponse = await fetch(htmlApiUrl.toString(), {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+
+      let links = [];
+      if (htmlResponse.ok) {
+        const html = await htmlResponse.text();
+        links = extractLinksFromHtml(html, url);
+        console.log(`[ScrapingBee] Extracted ${links.length} links from HTML`);
+      }
+
+      const { title, content } = parseMarkdown(markdown, url);
 
       console.log(
         `[ScrapingBee] ✓ Scraped: ${title} (${content.length} chars, ${links.length} links)`
@@ -170,7 +194,7 @@ async function crawlWithScrapingBee(startUrl, chatbotId) {
 /**
  * Strategy 2: Direct fetch with plain text extraction (fallback)
  */
-async function crawlWithDirectFetch(startUrl, chatbotId) {
+async function crawlWithDirectFetch(startUrl, chatbotId, isUpdate = false) {
   const pages = [];
   const visited = new Set();
   const queue = [startUrl];
@@ -183,8 +207,7 @@ async function crawlWithDirectFetch(startUrl, chatbotId) {
 
     if (!normalized || visited.has(normalized)) continue;
 
-    // Check if already scraped
-    if (await isAlreadyScraped(normalized, chatbotId)) {
+    if (isUpdate && (await isAlreadyScraped(normalized, chatbotId))) {
       console.log(`[Crawler] ✓ Already scraped: ${url}`);
       visited.add(normalized);
       continue;
@@ -193,6 +216,10 @@ async function crawlWithDirectFetch(startUrl, chatbotId) {
     visited.add(normalized);
 
     try {
+      console.log(
+        `[Direct] Fetching (${pages.length + 1}/${MAX_PAGES}): ${url}`
+      );
+
       const response = await fetch(url, {
         signal: AbortSignal.timeout(TIMEOUT_MS),
         headers: {
@@ -220,6 +247,7 @@ async function crawlWithDirectFetch(startUrl, chatbotId) {
 
       if (content.length > 100) {
         pages.push({ url: normalized, title, content });
+        console.log(`[Direct] ✓ Scraped: ${title} (${content.length} chars)`);
       }
 
       for (const link of links) {
@@ -236,6 +264,7 @@ async function crawlWithDirectFetch(startUrl, chatbotId) {
     }
   }
 
+  console.log(`[Direct] Crawl complete: ${pages.length} pages saved`);
   return pages;
 }
 
@@ -270,15 +299,12 @@ async function scrapeHomepage(url) {
 }
 
 /**
- * Parse markdown content and extract title, content, and links
+ * Parse markdown content and extract title and content (links extracted separately from HTML)
  */
 function parseMarkdown(markdown, baseUrl) {
   // Extract title from first heading
   const titleMatch = markdown.match(/^#\s+(.+)$/m);
   const title = titleMatch ? titleMatch[1].trim() : "No Title";
-
-  // Extract all links
-  const links = extractLinksFromMarkdown(markdown, baseUrl);
 
   // Clean content - remove excessive whitespace but keep structure
   const content = markdown
@@ -286,85 +312,7 @@ function parseMarkdown(markdown, baseUrl) {
     .trim()
     .substring(0, 30000); // Limit to 30k chars
 
-  return { title, content, links };
-}
-
-/**
- * Extract links from markdown format
- */
-function extractLinksFromMarkdown(markdown, baseUrl) {
-  const links = new Set();
-
-  // Match markdown links: [text](url)
-  const linkPattern = /\[([^\]]+)\]$$([^)]+)$$/g;
-  let match;
-
-  const JUNK = [
-    "login",
-    "signup",
-    "signin",
-    "register",
-    "cart",
-    "checkout",
-    "account",
-    "profile",
-    "admin",
-    "wp-admin",
-    "mailto:",
-    "tel:",
-    "javascript:",
-    "#",
-    ".css",
-    ".js",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".svg",
-    ".pdf",
-    ".zip",
-    ".xml",
-    ".json",
-    "favicon",
-  ];
-
-  while ((match = linkPattern.exec(markdown)) !== null) {
-    try {
-      const href = match[2].trim();
-
-      if (
-        !href ||
-        href === "#" ||
-        href.startsWith("javascript:") ||
-        href.startsWith("mailto:") ||
-        href.startsWith("tel:")
-      ) {
-        continue;
-      }
-
-      const abs = new URL(href, baseUrl).href;
-      const lower = abs.toLowerCase();
-
-      if (!JUNK.some((j) => lower.includes(j))) {
-        links.add(abs);
-      }
-    } catch (e) {}
-  }
-
-  return Array.from(links);
-}
-
-/**
- * Parse HTML and extract title, content, and links (fallback method)
- */
-function parseHtml(html, baseUrl) {
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  const title = titleMatch ? titleMatch[1].trim() : "No Title";
-
-  const links = extractLinksFromHtml(html, baseUrl);
-  const content = cleanHtml(html);
-
-  return { title, content, links };
+  return { title, content };
 }
 
 /**
@@ -503,4 +451,18 @@ function normalizeUrl(url) {
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Parse HTML content and extract title, content, and links
+ */
+function parseHtml(html, baseUrl) {
+  const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+  const title = titleMatch ? titleMatch[1].trim() : "No Title";
+
+  const content = cleanHtml(html);
+
+  const links = extractLinksFromHtml(html, baseUrl);
+
+  return { title, content, links };
 }

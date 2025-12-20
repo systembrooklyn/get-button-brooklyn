@@ -50,35 +50,55 @@ export async function POST(req) {
       where: {
         chatbotId,
         isActive: true,
-        // Exclude error/failed crawl sources
         title: {
           notIn: ["Crawl Failed", "Crawl Error"],
         },
       },
       orderBy: { createdAt: "desc" },
-      take: 20, // Reduced from 25 for better performance
+      take: 50, // Increased to get all sources for proper prioritization
     });
 
     console.log(
       `[v0] Chatbot ${chatbotId}: Found ${allSources.length} valid knowledge sources`
     );
 
+    const webSources = allSources.filter((s) => s.type === "web");
+    const fileSources = allSources.filter((s) => s.type === "file");
+
     let contextData = "";
+    const sourceLinks = [];
 
-    if (allSources.length > 0) {
-      contextData = allSources
-        .map((s, i) => {
-          return `
-=== SOURCE ${i + 1}: ${s.title} ===
-Type: ${s.type}
-URL: ${s.url}
-
+    if (fileSources.length > 0) {
+      contextData += "\n=== UPLOADED FILES (HIGH PRIORITY) ===\n";
+      fileSources.slice(0, 10).forEach((s, i) => {
+        contextData += `
+--- FILE ${i + 1}: ${s.title} ---
 ${s.content}
 ---
 `;
-        })
-        .join("\n\n");
-    } else {
+      });
+    }
+
+    if (webSources.length > 0) {
+      contextData += "\n=== WEBSITE CONTENT (REFERENCE) ===\n";
+      webSources.slice(0, 10).forEach((s, i) => {
+        contextData += `
+--- PAGE ${i + 1}: ${s.title} ---
+URL: ${s.url}
+${s.content}
+---
+`;
+        // Collect source links for response
+        if (s.url) {
+          sourceLinks.push({
+            title: s.title,
+            url: s.url,
+          });
+        }
+      });
+    }
+
+    if (!contextData) {
       console.warn("[v0] No valid knowledge sources found for chatbot");
       contextData = "SYSTEM: No knowledge base data is currently available.";
     }
@@ -90,39 +110,67 @@ ${s.content}
 Personality: ${chatbot.personality || "Friendly and helpful"}
 Language: Respond in ${chatbot.botLanguage || "English"}
 
-${chatbot.systemPrompt ? `Custom Instructions:\n${chatbot.systemPrompt}\n` : ""}
+${
+  chatbot.systemPrompt
+    ? `=== CUSTOM INSTRUCTIONS (HIGHEST PRIORITY) ===
+${chatbot.systemPrompt}
+
+CRITICAL: These custom instructions take precedence over ALL other information sources. If there's any conflict between custom instructions and other data sources, ALWAYS follow the custom instructions.
+=== END CUSTOM INSTRUCTIONS ===
+
+`
+    : ""
+}
 
 === KNOWLEDGE BASE ===
 ${contextData}
 === END KNOWLEDGE BASE ===
 
-CRITICAL RULES:
+INFORMATION PRIORITY RULES:
+${
+  chatbot.systemPrompt
+    ? `1. CUSTOM INSTRUCTIONS (above) = HIGHEST PRIORITY - Always follow these first
+2. UPLOADED FILES = HIGH PRIORITY - Use file data when custom instructions don't specify
+3. WEBSITE CONTENT = REFERENCE - Use only when files and custom instructions don't provide the answer`
+    : `1. UPLOADED FILES = HIGH PRIORITY - Prioritize information from uploaded files
+2. WEBSITE CONTENT = REFERENCE - Use website data when files don't provide the answer`
+}
+
 ${
   allSources.length === 0
-    ? `1. NO KNOWLEDGE BASE DATA IS AVAILABLE. You do not have access to any website content yet.
-2. When asked about anything specific, respond: "I don't have that information in my knowledge base yet. Please contact us directly for assistance."
-3. Be polite and apologetic about the limitation.
-4. NEVER make up or guess information.`
-    : `1. Answer questions ONLY using information from the Knowledge Base above.
-2. If the specific information is not in the Knowledge Base, respond with: "I don't have that specific information in my knowledge base. Please contact us directly or visit ${
+    ? `IMPORTANT: NO KNOWLEDGE BASE DATA IS AVAILABLE
+- You do not have access to any website content or files yet
+- When asked about anything specific, respond: "I don't have that information in my knowledge base yet. Please contact us directly for assistance."
+- Be polite and apologetic about the limitation
+- NEVER make up or guess information`
+    : `RESPONSE RULES:
+1. Answer questions using the priority order above
+2. If conflicting information exists, use the higher priority source
+3. If specific information is not in any source, respond: "I don't have that specific information in my knowledge base. Please contact us directly or visit ${
         chatbot.dataSourceUrl || "our website"
       } for more details."
-3. Be concise, helpful, and conversational.
-4. Use clear formatting for better readability.
-5. NEVER make up information - only use what's provided in the Knowledge Base.
-6. When information IS available, be confident and helpful in your response.`
+4. Be concise, helpful, and conversational
+5. Use clear formatting for better readability
+6. NEVER make up information - only use what's provided
+7. When information IS available, be confident and helpful in your response
+8. IMPORTANT: When answering from website content, you MUST cite sources naturally in your response (e.g., "According to our [page name]..." or "As mentioned on our website...")
+
+SOURCE CITATION RULES:
+- When using information from WEBSITE CONTENT (not files or custom instructions), naturally reference the source page in your response
+- Example: "According to our About page..." or "As mentioned in our Services section..."
+- This helps users know where to find more detailed information on the website`
 }
 `;
 
     const recentMessages = await prisma.chatMessage.findMany({
       where: { chatbotId },
-      take: 8,
+      take: 6, // Reduced from 8 to minimize context bleeding
       orderBy: { createdAt: "desc" },
     });
 
     const history = recentMessages.reverse().map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content.substring(0, 1000) }],
+      parts: [{ text: m.content.substring(0, 800) }], // Reduced from 1000
     }));
 
     // Generate Response
@@ -139,6 +187,49 @@ ${
 
     const result = await chat.sendMessage({ message });
     const responseText = result.text.trim();
+
+    const relevantSources = [];
+
+    // Only add sources if website content was actually used (check if response mentions website data)
+    if (
+      webSources.length > 0 &&
+      allSources.length > 0 &&
+      responseText.length > 20
+    ) {
+      // Extract keywords from the user's question
+      const questionKeywords = message
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 3);
+
+      // Find the most relevant source based on content matching
+      let bestMatch = null;
+      let highestScore = 0;
+
+      webSources.forEach((source) => {
+        const sourceContent = (
+          source.title +
+          " " +
+          source.content
+        ).toLowerCase();
+        const score = questionKeywords.filter((keyword) =>
+          sourceContent.includes(keyword)
+        ).length;
+
+        if (score > highestScore && source.url) {
+          highestScore = score;
+          bestMatch = source;
+        }
+      });
+
+      // Only add source if there's a good match and response isn't from custom instructions/files only
+      if (bestMatch && highestScore > 0) {
+        relevantSources.push({
+          title: bestMatch.title,
+          url: bestMatch.url,
+        });
+      }
+    }
 
     // Save to DB
     await prisma.$transaction(
@@ -158,7 +249,10 @@ ${
       ].filter(Boolean)
     );
 
-    return Response.json({ message: responseText });
+    return Response.json({
+      message: responseText,
+      sources: relevantSources.length > 0 ? relevantSources : undefined,
+    });
   } catch (error) {
     console.error("[v0] Chat Error:", error);
     return Response.json(
