@@ -108,7 +108,6 @@ ${s.content}
     }
 
 Personality: ${chatbot.personality || "Friendly and helpful"}
-Language: Respond in ${chatbot.botLanguage || "English"}
 
 ${
   chatbot.systemPrompt
