@@ -25,11 +25,6 @@ export async function POST(req) {
   try {
     console.log("[v0] Chat API called");
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
     const body = await req.json();
     const { message, chatbotId } = body;
 
@@ -53,9 +48,27 @@ export async function POST(req) {
       );
     }
 
-    const isTestUser = user?.email === "test@test.com";
-    const isAdmin = user?.id === ADMIN_UID || isTestUser;
+    const origin = req.headers.get("origin");
+    const referer = req.headers.get("referer");
 
+    // Check if request is from the dashboard (authenticated) or external site (embed)
+    const isFromDashboard =
+      origin?.includes(appDomain) || referer?.includes(appDomain);
+
+    let isAdmin = false;
+
+    // Only check auth for dashboard requests
+    if (isFromDashboard) {
+      const supabase = await createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const isTestUser = user?.email === "test@test.com";
+      isAdmin = user?.id === ADMIN_UID || isTestUser;
+    }
+
+    // For dashboard requests, admins can bypass limits
     if (!isAdmin) {
       const count = await prisma.chatMessage.count({ where: { chatbotId } });
       if (count >= (chatbot.messagesLimit || 20)) {
