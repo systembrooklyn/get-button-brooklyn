@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   MessageCircle,
   LayoutGrid,
@@ -9,11 +9,13 @@ import {
   Menu,
   X,
   Zap,
+  Code2,
 } from "lucide-react";
 import AIChatbotTab from "@/components/ai-chatbot-tab";
 import GetButtonTab from "@/components/get-button-tab";
 import ChatLogsTab from "@/components/chat-logs-tab";
 import BillingTab from "@/components/billing-tab";
+import ScriptsTab from "@/components/scripts-tab";
 import { getChatbotByUserId } from "@/app/actions/chatbot-actions";
 
 export default function ChatbotClientWrapper({
@@ -68,6 +70,7 @@ export default function ChatbotClientWrapper({
   const navItems = [
     { id: "chatbots", label: "AI Chatbots", icon: MessageCircle },
     { id: "buttons", label: "Floating Buttons", icon: LayoutGrid },
+    { id: "scripts", label: "Embed Scripts", icon: Code2 },
     { id: "logs", label: "Chat Logs", icon: History },
     { id: "billing", label: "Billing & Usage", icon: CreditCard },
   ];
@@ -84,6 +87,8 @@ export default function ChatbotClientWrapper({
         );
       case "buttons":
         return <GetButtonTab initialButtons={initialButtons} userId={userId} />;
+      case "scripts":
+        return <ScriptsTab chatbots={chatbots} />;
       case "logs":
         return <ChatLogsTab chatbots={chatbots} />;
       case "billing":

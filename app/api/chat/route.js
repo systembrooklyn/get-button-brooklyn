@@ -4,8 +4,27 @@ import { GoogleGenAI } from "@google/genai";
 
 const ADMIN_UID = "a1941b27-d783-45f0-bf73-f531a6394f02";
 
+export async function OPTIONS(request) {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
+
 export async function POST(req) {
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+
   try {
+    console.log("[v0] Chat API called");
+
     const supabase = await createClient();
     const {
       data: { user },
@@ -14,16 +33,26 @@ export async function POST(req) {
     const body = await req.json();
     const { message, chatbotId } = body;
 
-    if (!message || !chatbotId)
-      return Response.json({ error: "Missing data" }, { status: 400 });
+    console.log("[v0] Request data:", {
+      message: message?.substring(0, 50),
+      chatbotId,
+    });
+
+    if (!message || !chatbotId) {
+      return Response.json({ error: "Missing data" }, { status: 400, headers });
+    }
 
     const chatbot = await prisma.chatbot.findUnique({
       where: { id: chatbotId },
     });
-    if (!chatbot)
-      return Response.json({ error: "Chatbot not found" }, { status: 404 });
 
-    // Limit Check
+    if (!chatbot) {
+      return Response.json(
+        { error: "Chatbot not found" },
+        { status: 404, headers }
+      );
+    }
+
     const isTestUser = user?.email === "test@test.com";
     const isAdmin = user?.id === ADMIN_UID || isTestUser;
 
@@ -32,7 +61,7 @@ export async function POST(req) {
       if (count >= (chatbot.messagesLimit || 20)) {
         return Response.json(
           { error: "Message limit reached." },
-          { status: 403 }
+          { status: 403, headers }
         );
       }
     }
@@ -42,7 +71,7 @@ export async function POST(req) {
       console.error("[v0] API Key not found");
       return Response.json(
         { error: "Server Configuration Error" },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -55,7 +84,7 @@ export async function POST(req) {
         },
       },
       orderBy: { createdAt: "desc" },
-      take: 50, // Increased to get all sources for proper prioritization
+      take: 50,
     });
 
     console.log(
@@ -88,7 +117,6 @@ URL: ${s.url}
 ${s.content}
 ---
 `;
-        // Collect source links for response
         if (s.url) {
           sourceLinks.push({
             title: s.title,
@@ -163,16 +191,15 @@ SOURCE CITATION RULES:
 
     const recentMessages = await prisma.chatMessage.findMany({
       where: { chatbotId },
-      take: 6, // Reduced from 8 to minimize context bleeding
+      take: 6,
       orderBy: { createdAt: "desc" },
     });
 
     const history = recentMessages.reverse().map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content.substring(0, 800) }], // Reduced from 1000
+      parts: [{ text: m.content.substring(0, 800) }],
     }));
 
-    // Generate Response
     const ai = new GoogleGenAI({ apiKey });
     const chat = ai.chats.create({
       model: "gemini-2.5-flash",
@@ -189,19 +216,16 @@ SOURCE CITATION RULES:
 
     const relevantSources = [];
 
-    // Only add sources if website content was actually used (check if response mentions website data)
     if (
       webSources.length > 0 &&
       allSources.length > 0 &&
       responseText.length > 20
     ) {
-      // Extract keywords from the user's question
       const questionKeywords = message
         .toLowerCase()
         .split(/\s+/)
         .filter((w) => w.length > 3);
 
-      // Find the most relevant source based on content matching
       let bestMatch = null;
       let highestScore = 0;
 
@@ -221,7 +245,6 @@ SOURCE CITATION RULES:
         }
       });
 
-      // Only add source if there's a good match and response isn't from custom instructions/files only
       if (bestMatch && highestScore > 0) {
         relevantSources.push({
           title: bestMatch.title,
@@ -230,7 +253,6 @@ SOURCE CITATION RULES:
       }
     }
 
-    // Save to DB
     await prisma.$transaction(
       [
         prisma.chatMessage.create({
@@ -248,15 +270,23 @@ SOURCE CITATION RULES:
       ].filter(Boolean)
     );
 
-    return Response.json({
-      message: responseText,
-      sources: relevantSources.length > 0 ? relevantSources : undefined,
-    });
+    return Response.json(
+      {
+        message: responseText,
+        sources: relevantSources.length > 0 ? relevantSources : undefined,
+      },
+      { headers }
+    );
   } catch (error) {
     console.error("[v0] Chat Error:", error);
     return Response.json(
-      { error: "Failed to process request" },
-      { status: 500 }
+      { error: "Failed to process request", details: error.message },
+      {
+        status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
     );
   }
 }
