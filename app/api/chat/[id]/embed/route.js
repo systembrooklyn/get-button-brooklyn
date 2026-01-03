@@ -987,7 +987,7 @@ export async function GET(request, { params }) {
       renderMessages();
 ;
 
-fetch('http://localhost:3001/api/chat/public', {
+fetch('https://get-button-brooklyn.vercel.app/api/chat/public', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -40,39 +40,6 @@ export default function ScriptsTab({ chatbots }) {
         </div>
       </div>
 
-      {/* Environment Setup Instructions */}
-      <div className="border border-primary/30 rounded-xl p-5 bg-primary/5">
-        <div className="flex items-start gap-3">
-          <Settings className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-          <div className="space-y-3 flex-1">
-            <h3 className="font-semibold text-foreground text-sm">
-              Environment Setup Required
-            </h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Before using the embed script on your production website, add this
-              to your{" "}
-              <code className="px-1.5 py-0.5 bg-background border border-border rounded text-primary">
-                .env
-              </code>{" "}
-              file:
-            </p>
-            <pre className="bg-background border border-border rounded-lg p-3 overflow-x-auto text-xs font-mono">
-              <code className="text-primary">
-                NEXT_PUBLIC_DOMAIN_NAME=https://yourdomain.com
-              </code>
-            </pre>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Replace{" "}
-              <code className="px-1.5 py-0.5 bg-background border border-border rounded text-primary">
-                https://yourdomain.com
-              </code>{" "}
-              with your actual production domain. This ensures the chatbot API
-              calls work correctly when embedded on external websites.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Scripts List */}
       {chatbots.length > 0 ? (
         <div className="space-y-4">
