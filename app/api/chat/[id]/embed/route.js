@@ -729,9 +729,28 @@ export async function GET(request, { params }) {
     document.head.appendChild(style);
 
     /* ================== CREATE ELEMENTS ================== */
-    var bubble = document.createElement("div");
-    bubble.className = "gb-bubble";
-    bubble.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+ var bubble = document.createElement("div");
+bubble.className = "gb-bubble";
+
+if (cfg.avatar && (cfg.avatar.startsWith("http") || cfg.avatar.startsWith("data:image"))) {
+  var bubbleAvatar = document.createElement("img");
+  bubbleAvatar.src = cfg.avatar;
+  bubbleAvatar.alt = cfg.name || "Chatbot";
+  bubbleAvatar.style.width = "100%";
+  bubbleAvatar.style.height = "100%";
+  bubbleAvatar.style.borderRadius = "50%";
+  bubbleAvatar.style.objectFit = "cover";
+  bubbleAvatar.style.border = "2px solid rgba(255,255,255,0.4)";
+  
+  bubble.style.background = "transparent"; // 🔥 THIS WAS MISSING
+  bubble.appendChild(bubbleAvatar);
+}
+else {
+  bubble.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:28px;height:28px;">' +
+    '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>' +
+    '</svg>';
+}
 
     var win = document.createElement("div");
     win.className = "gb-window";
