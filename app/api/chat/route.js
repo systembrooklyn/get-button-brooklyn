@@ -51,6 +51,9 @@ export async function POST(req) {
     const origin = req.headers.get("origin");
     const referer = req.headers.get("referer");
 
+    const appDomain =
+      process.env.NEXT_PUBLIC_DOMAIN_NAME || "http://localhost:3000";
+
     // Check if request is from the dashboard (authenticated) or external site (embed)
     const isFromDashboard =
       origin?.includes(appDomain) || referer?.includes(appDomain);
