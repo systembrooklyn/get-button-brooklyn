@@ -54,14 +54,73 @@ export async function POST(req) {
         { status: 500, headers }
       );
     }
+    // 1️⃣ LOAD KNOWLEDGE SOURCES (FILES + WEB)
+    const sources = await prisma.knowledgeSource.findMany({
+      where: {
+        chatbotId,
+        isActive: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
 
+    const fileSources = sources.filter((s) => s.type === "file");
+    const webSources = sources.filter((s) => s.type === "web");
+
+    // 2️⃣ BUILD CONTEXT (FILES FIRST)
+    let context = "";
+
+    if (fileSources.length > 0) {
+      context += "\n=== UPLOADED FILES (HIGHEST PRIORITY) ===\n";
+      fileSources.slice(0, 10).forEach((s, i) => {
+        context += `
+--- FILE ${i + 1}: ${s.title} ---
+${s.content}
+---
+`;
+      });
+    }
+
+    if (webSources.length > 0) {
+      context += "\n=== WEBSITE CONTENT ===\n";
+      webSources.slice(0, 10).forEach((s, i) => {
+        context += `
+--- PAGE ${i + 1}: ${s.title} ---
+URL: ${s.url}
+${s.content}
+---
+`;
+      });
+    }
+
+    if (!context) {
+      context = "SYSTEM: No knowledge base content available.";
+    }
+
+    // 3️⃣ FINAL SYSTEM PROMPT
+    const systemInstruction = `
+You are ${chatbot.name || "AI Assistant"}.
+${chatbot.systemPrompt || ""}
+
+=== KNOWLEDGE BASE ===
+${context}
+=== END KNOWLEDGE BASE ===
+
+RULES:
+- Prefer uploaded FILES over websites
+- Never hallucinate
+- Say when info is missing
+`;
+
+    // 4️⃣ SEND TO GEMINI
     const ai = new GoogleGenAI({ apiKey });
 
     const chat = ai.chats.create({
       model: "gemini-2.5-flash",
       config: {
-        systemInstruction:
-          chatbot.systemPrompt || "You are a helpful assistant.",
+        systemInstruction,
+        temperature: 0.7,
+        maxOutputTokens: 1000,
       },
     });
 
