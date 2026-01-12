@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Moon, Sun, Globe } from "lucide-react";
+import Link from "next/link";
 
 export default function Navbar({ user: initialUser }) {
   const [user, setUser] = useState(initialUser);
@@ -92,14 +93,16 @@ export default function Navbar({ user: initialUser }) {
               <path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
             </svg>
           </div>
-          <div>
-            <div className="font-bold text-white text-lg leading-tight">
-              GetButton
+          <Link href="/">
+            <div>
+              <div className="font-bold text-white text-lg leading-tight">
+                GetButton
+              </div>
+              <div className="text-xs text-white/80 leading-tight">
+                Trusted by 743,358 websites
+              </div>
             </div>
-            <div className="text-xs text-white/80 leading-tight">
-              Trusted by 743,358 websites
-            </div>
-          </div>
+          </Link>
         </div>
 
         {/* NAV LINKS */}
