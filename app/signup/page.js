@@ -40,7 +40,7 @@ export default function SignupPage() {
       setError(result.error);
       setLoading(false);
     } else {
-      router.push("/profile");
+      router.push("/chatbot");
     }
   };
 
