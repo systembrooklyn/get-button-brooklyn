@@ -112,7 +112,7 @@ export default function Navbar({ user: initialUser }) {
 
         <div className="hidden md:flex items-center gap-1">
           <button
-            onClick={() => router.push("/")}
+            onClick={() => router.push("/chatbot")}
             className="px-4 py-2 text-white hover:bg-white/10 rounded-full transition-colors text-sm font-medium"
           >
             Chat buttons
