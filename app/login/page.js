@@ -18,15 +18,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
-  const supabase = createClient();
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        router.replace("/chatbot");
-      }
-    });
-  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
