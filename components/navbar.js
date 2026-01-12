@@ -9,46 +9,75 @@ export default function Navbar({ user: initialUser }) {
   const [user, setUser] = useState(initialUser);
   const [isDark, setIsDark] = useState(false);
   const [mounted, setMounted] = useState(false);
+
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
 
-  // Mount + theme
+  /* ------------------------------
+     Mount + initial theme
+  -------------------------------*/
   useEffect(() => {
     setMounted(true);
     setIsDark(document.documentElement.classList.contains("dark"));
   }, []);
 
-  // ✅ ONLY listen for auth changes (NO redirects)
+  /* ------------------------------
+     🔥 SYNC SERVER USER → CLIENT
+     THIS IS THE MISSING FIX
+  -------------------------------*/
+  useEffect(() => {
+    setUser(initialUser);
+  }, [initialUser]);
+
+  /* ------------------------------
+     Listen for FUTURE auth changes
+     (logout, token refresh, etc.)
+  -------------------------------*/
   useEffect(() => {
     if (!mounted) return;
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
-      router.refresh(); // keep server components in sync
+
+      if (event === "SIGNED_OUT") {
+        router.push("/login");
+      }
     });
 
     return () => subscription.unsubscribe();
   }, [mounted, supabase, router]);
 
+  /* ------------------------------
+     Theme toggle
+  -------------------------------*/
   const toggleTheme = useCallback(() => {
     const isDarkMode = document.documentElement.classList.toggle("dark");
     localStorage.setItem("theme", isDarkMode ? "dark" : "light");
     setIsDark(isDarkMode);
   }, []);
 
+  /* ------------------------------
+     Logout
+  -------------------------------*/
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push("/login"); // SOFT redirect only
+    router.push("/login");
   };
 
+  /* ------------------------------
+     Hide navbar on auth pages
+  -------------------------------*/
   if (!mounted) return null;
 
   const isAuthPage = pathname === "/login" || pathname === "/signup";
   if (isAuthPage) return null;
 
+  /* ------------------------------
+     RENDER
+  -------------------------------*/
   return (
     <nav className="bg-gradient-to-r from-[#2563eb] via-[#3b82f6] to-[#60a5fa] border-b border-blue-600/20">
       <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8 flex items-center justify-between">
@@ -94,6 +123,7 @@ export default function Navbar({ user: initialUser }) {
           <button
             onClick={toggleTheme}
             className="w-9 h-9 rounded-full hover:bg-white/10 text-white"
+            aria-label="Toggle theme"
           >
             {isDark ? (
               <Sun className="w-4 h-4" />
@@ -111,7 +141,7 @@ export default function Navbar({ user: initialUser }) {
               </span>
               <button
                 onClick={handleLogout}
-                className="px-5 py-2 bg-white text-[#2563eb] rounded-full text-sm font-medium"
+                className="px-5 py-2 bg-white text-[#2563eb] rounded-full text-sm font-medium hover:bg-white/90"
               >
                 Logout
               </button>
@@ -119,7 +149,7 @@ export default function Navbar({ user: initialUser }) {
           ) : (
             <button
               onClick={() => router.push("/login")}
-              className="px-5 py-2 bg-white text-[#2563eb] rounded-full text-sm font-medium"
+              className="px-5 py-2 bg-white text-[#2563eb] rounded-full text-sm font-medium hover:bg-white/90"
             >
               Sign In
             </button>

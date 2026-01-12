@@ -2,8 +2,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/navbar";
 import ThemeProvider from "@/components/theme-provider";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { createClient } from "@/utils/supabase/server";
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -31,12 +30,17 @@ export const metadata = {
   },
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
         <ThemeProvider>
-          <Navbar />
+          <Navbar user={user} />
           <main>{children}</main>
         </ThemeProvider>
       </body>
