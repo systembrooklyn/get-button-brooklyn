@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { handleSignIn } from "@/app/actions/auth";
@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
+import { createClient } from "@/utils/supabase/client";
+
 import { LockKeyhole, Mail, ArrowRight } from "lucide-react";
 
 export default function LoginPage() {
@@ -16,6 +18,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
+  const supabase = createClient();
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        router.replace("/chatbot");
+      }
+    });
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
