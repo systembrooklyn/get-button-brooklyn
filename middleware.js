@@ -5,11 +5,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export async function middleware(request) {
-  let supabaseResponse = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
+  // Create a response object we can attach cookies to
+  let response = NextResponse.next();
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
@@ -17,15 +14,9 @@ export async function middleware(request) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) =>
-          request.cookies.set(name, value)
-        );
-        supabaseResponse = NextResponse.next({
-          request,
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options);
         });
-        cookiesToSet.forEach(({ name, value, options }) =>
-          supabaseResponse.cookies.set(name, value, options)
-        );
       },
     },
   });
@@ -34,31 +25,17 @@ export async function middleware(request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user && request.nextUrl.pathname.startsWith("/chatbot")) {
+  const pathname = request.nextUrl.pathname;
+
+  // ✅ PROTECT PRIVATE ROUTES ONLY
+  if (!user && pathname.startsWith("/chatbot")) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect unauthenticated users to login for protected routes (except home, login, signup)
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/signup") &&
-    !request.nextUrl.pathname.startsWith("/chatbot") &&
-    request.nextUrl.pathname !== "/"
-  ) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+  // ❌ DO NOT redirect authenticated users here
+  // ❌ DO NOT protect login/signup/home in middleware
 
-  // Redirect authenticated users away from auth pages
-  if (
-    user &&
-    (request.nextUrl.pathname === "/login" ||
-      request.nextUrl.pathname === "/signup")
-  ) {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-
-  return supabaseResponse;
+  return response;
 }
 
 export const config = {
