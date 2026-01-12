@@ -119,7 +119,7 @@ export default function GetButtonTab({ initialButtons, userId }) {
     .filter((b) => b.platformData); // Ensure we only keep valid platforms
 
   return (
-    <div className="space-y-8">
+    <div id="buttons" className="space-y-8">
       <Card className="p-8">
         <h2 className="text-2xl font-bold mb-6">Choose Your Platform</h2>
 
