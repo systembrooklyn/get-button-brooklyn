@@ -576,8 +576,9 @@ export default function EditChatbotModal({
           )}
 
           {error && (
-            <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4">
-              <p className="text-sm text-destructive">{error}</p>
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+              <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5" />
+              <p className="text-sm text-amber-600">{error}</p>
             </div>
           )}
 

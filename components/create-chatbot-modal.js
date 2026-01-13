@@ -14,7 +14,6 @@ import { Upload, FileText, X, Palette, Sparkles } from "lucide-react";
 export default function CreateChatbotModal({
   isOpen,
   onClose,
-  userId,
   onChatbotCreated,
 }) {
   const [step, setStep] = useState("general");
@@ -71,7 +70,7 @@ export default function CreateChatbotModal({
     }
 
     if (file.size > 2 * 1024 * 1024) {
-      setError("Image must be smaller than 2MB");
+      setError("Image must be smaller than 1MB");
       return;
     }
 
@@ -194,40 +193,27 @@ export default function CreateChatbotModal({
         trainingFiles: formData.trainingFiles,
       });
 
-      // Artificial delay for UX
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      if (onChatbotCreated) {
-        await onChatbotCreated();
+      if (!result?.success) {
+        setError(result?.error || "Failed to create chatbot.");
+        return;
       }
 
+      if (onChatbotCreated) await onChatbotCreated();
       onClose();
-      // Reset form
-      setStep("general");
-      setAvatarPreview("");
-      setUploadedFiles([]);
-      setFormData({
-        name: "",
-        tagline: "",
-        botLanguage: "en",
-        color: "#2563eb",
-        personality: "friendly",
-        greetingMessage: "Hello! How can I help you today?",
-        suggestedMessages: "How can I get started?\nWhat are your prices?",
-        sendMessageText: "Send",
-        systemPrompt: "",
-        dataSourceUrl: "",
-        avatar: "",
-        trainingFiles: "",
-      });
     } catch (err) {
-      console.error("[v0] Error creating chatbot:", err);
-      if (err.message && err.message.includes("LIMIT_REACHED")) {
+      const message = err?.message || "";
+
+      // 🔥 THIS IS THE IMPORTANT PART
+      if (
+        message.includes("Body exceeded") ||
+        message.includes("body size") ||
+        message.includes("PayloadTooLarge")
+      ) {
         setError(
-          "You have reached the maximum limit of 3 chatbots. Please upgrade."
+          "Upload too large. The avatar or files exceed the maximum allowed size. Please reduce file size and try again."
         );
       } else {
-        setError(err.message || "Failed to create chatbot. Please try again.");
+        setError("Unexpected error occurred. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -551,8 +537,8 @@ export default function CreateChatbotModal({
           )}
 
           {error && (
-            <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 animate-in slide-in-from-top-2">
-              <p className="text-sm text-destructive">{error}</p>
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+              <p className="text-sm text-amber-600">{error}</p>
             </div>
           )}
 
