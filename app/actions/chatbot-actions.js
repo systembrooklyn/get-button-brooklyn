@@ -193,7 +193,7 @@ export async function updateChatbot(chatbotId, data) {
     if (data.dataSourceUrl && data.dataSourceUrl !== chatbot.dataSourceUrl) {
       console.log(
         "[v0] URL changed, re-crawling website for:",
-        data.dataSourceUrl
+        data.dataSourceUrl,
       );
 
       try {
@@ -215,7 +215,7 @@ export async function updateChatbot(chatbotId, data) {
             })),
           });
           console.log(
-            `[v0] Successfully crawled and saved ${pages.length} pages`
+            `[v0] Successfully crawled and saved ${pages.length} pages`,
           );
         } else {
           await prisma.knowledgeSource.create({
@@ -375,7 +375,7 @@ async function processNewFiles(files, chatbotId) {
         title: sanitizeForDatabase(file.name),
         content: sanitizeForDatabase(text),
       };
-    })
+    }),
   );
 
   return results.filter(Boolean);
@@ -401,7 +401,7 @@ async function extractTextFromFile(base64, mimeType, fileName) {
     const ai = new GoogleGenAI({ apiKey });
     // Use flash model for speed and capability
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-flash-lite",
       contents: {
         parts: [
           { inlineData: { mimeType, data: base64 } },

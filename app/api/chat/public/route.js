@@ -33,7 +33,7 @@ export async function POST(req) {
     if (!chatbot || !chatbot.isActive) {
       return Response.json(
         { error: "Chatbot inactive or not found" },
-        { status: 403, headers }
+        { status: 403, headers },
       );
     }
 
@@ -43,7 +43,7 @@ export async function POST(req) {
     ) {
       return Response.json(
         { error: "Message limit reached" },
-        { status: 403, headers }
+        { status: 403, headers },
       );
     }
 
@@ -51,7 +51,7 @@ export async function POST(req) {
     if (!apiKey) {
       return Response.json(
         { error: "Missing API key" },
-        { status: 500, headers }
+        { status: 500, headers },
       );
     }
     // 1️⃣ LOAD KNOWLEDGE SOURCES (FILES + WEB)
@@ -116,7 +116,7 @@ RULES:
     const ai = new GoogleGenAI({ apiKey });
 
     const chat = ai.chats.create({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-flash-lite",
       config: {
         systemInstruction,
         temperature: 0.7,

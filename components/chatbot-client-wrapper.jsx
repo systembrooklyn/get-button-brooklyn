@@ -10,12 +10,15 @@ import {
   X,
   Zap,
   Code2,
+  Pencil,
 } from "lucide-react";
 import AIChatbotTab from "@/components/ai-chatbot-tab";
 import GetButtonTab from "@/components/get-button-tab";
 import ChatLogsTab from "@/components/chat-logs-tab";
 import BillingTab from "@/components/billing-tab";
 import ScriptsTab from "@/components/scripts-tab";
+import CorrectionsTab from "@/components/corrections-tab";
+
 import { getChatbotByUserId } from "@/app/actions/chatbot-actions";
 
 export default function ChatbotClientWrapper({
@@ -56,7 +59,7 @@ export default function ChatbotClientWrapper({
 
   const totalMessagesUsed = chatbots.reduce(
     (acc, chatbot) => acc + (chatbot.messageCount || 0),
-    0
+    0,
   );
 
   const messagesRemaining = Math.max(0, totalLimit - totalMessagesUsed);
@@ -64,14 +67,15 @@ export default function ChatbotClientWrapper({
     totalLimit > 0
       ? Math.min((totalMessagesUsed / totalLimit) * 100, 100)
       : totalMessagesUsed > 0
-      ? 100
-      : 0;
+        ? 100
+        : 0;
 
   const navItems = [
     { id: "chatbots", label: "AI Chatbots", icon: MessageCircle },
     { id: "buttons", label: "Floating Buttons", icon: LayoutGrid },
     { id: "scripts", label: "Embed Scripts", icon: Code2 },
     { id: "logs", label: "Chat Logs", icon: History },
+    { id: "corrections", label: "Corrections", icon: Pencil },
     { id: "billing", label: "Billing & Usage", icon: CreditCard },
   ];
 
@@ -91,6 +95,14 @@ export default function ChatbotClientWrapper({
         return <ScriptsTab chatbots={chatbots} />;
       case "logs":
         return <ChatLogsTab chatbots={chatbots} />;
+      case "corrections":
+        return (
+          <CorrectionsTab
+            chatbots={chatbots}
+            userId={userId}
+            onRefresh={refreshChatbots}
+          />
+        );
       case "billing":
         return <BillingTab chatbots={chatbots} />;
       default:

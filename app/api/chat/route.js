@@ -44,7 +44,7 @@ export async function POST(req) {
     if (!chatbot) {
       return Response.json(
         { error: "Chatbot not found" },
-        { status: 404, headers }
+        { status: 404, headers },
       );
     }
 
@@ -77,7 +77,7 @@ export async function POST(req) {
       if (count >= (chatbot.messagesLimit || 20)) {
         return Response.json(
           { error: "Message limit reached." },
-          { status: 403, headers }
+          { status: 403, headers },
         );
       }
     }
@@ -87,7 +87,7 @@ export async function POST(req) {
       console.error("[v0] API Key not found");
       return Response.json(
         { error: "Server Configuration Error" },
-        { status: 500, headers }
+        { status: 500, headers },
       );
     }
 
@@ -104,7 +104,7 @@ export async function POST(req) {
     });
 
     console.log(
-      `[v0] Chatbot ${chatbotId}: Found ${allSources.length} valid knowledge sources`
+      `[v0] Chatbot ${chatbotId}: Found ${allSources.length} valid knowledge sources`,
     );
 
     const webSources = allSources.filter((s) => s.type === "web");
@@ -218,7 +218,7 @@ SOURCE CITATION RULES:
 
     const ai = new GoogleGenAI({ apiKey });
     const chat = ai.chats.create({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-flash-lite",
       history: history,
       config: {
         systemInstruction: systemInstruction,
@@ -252,7 +252,7 @@ SOURCE CITATION RULES:
           source.content
         ).toLowerCase();
         const score = questionKeywords.filter((keyword) =>
-          sourceContent.includes(keyword)
+          sourceContent.includes(keyword),
         ).length;
 
         if (score > highestScore && source.url) {
@@ -283,7 +283,7 @@ SOURCE CITATION RULES:
               data: { messageCount: { increment: 1 } },
             })
           : null,
-      ].filter(Boolean)
+      ].filter(Boolean),
     );
 
     return Response.json(
@@ -291,7 +291,7 @@ SOURCE CITATION RULES:
         message: responseText,
         sources: relevantSources.length > 0 ? relevantSources : undefined,
       },
-      { headers }
+      { headers },
     );
   } catch (error) {
     console.error("[v0] Chat Error:", error);
@@ -302,7 +302,7 @@ SOURCE CITATION RULES:
         headers: {
           "Access-Control-Allow-Origin": "*",
         },
-      }
+      },
     );
   }
 }
