@@ -3,6 +3,7 @@ import "./globals.css";
 import Navbar from "@/components/navbar";
 import ThemeProvider from "@/components/theme-provider";
 import { createClient } from "@/utils/supabase/server";
+import Script from "next/script";
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -10,24 +11,6 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata = {
   title: "AI Chatbot Platform",
   description: "Create and manage AI chatbots",
-  generator: "v0.app",
-  icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/apple-icon.png",
-  },
 };
 
 export default async function RootLayout({ children }) {
@@ -39,6 +22,12 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
+        {/* ✅ Chatbot embed */}
+        <Script
+          src="https://get-button-brooklyn-one.vercel.app//api/chat/cmkwvaacy0001tbag8bslxdht/embed"
+          strategy="afterInteractive"
+        />
+
         <ThemeProvider>
           <Navbar user={user} />
           <main>{children}</main>

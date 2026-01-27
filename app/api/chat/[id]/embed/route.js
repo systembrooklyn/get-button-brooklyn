@@ -35,7 +35,7 @@ export async function GET(request, { params }) {
         {
           status: 404,
           headers: { "Content-Type": "application/javascript" },
-        }
+        },
       );
     }
 
@@ -67,7 +67,7 @@ export async function GET(request, { params }) {
       botLanguage: chatbot.botLanguage || "en",
     },
     null,
-    2
+    2,
   )};
 
   console.log("[v0] Chatbot config loaded:", cfg);
@@ -1006,7 +1006,7 @@ else {
       renderMessages();
 ;
 
-fetch('https://get-button-brooklyn.vercel.app/api/chat/public', {
+fetch('https://get-button-brooklyn-one.vercel.app/api/chat/public', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
