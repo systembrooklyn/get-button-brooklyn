@@ -56,7 +56,7 @@ model Chatbot {
   sendMessageText   String  @default("Send")
   trainingFiles     String  @default("")
   messageCount      Int     @default(0)
-  messagesLimit     Int     @default(20)
+  messagesLimit     Int     @default(2000)
   isActive          Boolean @default(true)
 
   messages ChatMessage[]
