@@ -59,9 +59,7 @@ export default function ChatbotClientWrapper({
 
   // Use the limit from DB (assuming all bots share the same limit)
   const MESSAGES_PER_BOT = chatbots[0]?.messagesLimit ?? 20;
-  console.log("MESSAGES_PER_BOT", MESSAGES_PER_BOT);
-  const totalLimit = Math.max(chatbots.length * MESSAGES_PER_BOT, 0);
-  console.log("totalLimit", totalLimit);
+  const totalLimit = Math.max(chatbots.length * MESSAGES_PER_BOT, 0) ;
 
   const totalMessagesUsed = chatbots.reduce(
     (acc, chatbot) => acc + (chatbot.messageCount || 0),

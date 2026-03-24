@@ -29,6 +29,8 @@ const linkify = (text) => {
 export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
   const accentColor = chatbot?.color || "#2563eb";
   const messagesEndRef = useRef(null);
+  const assistantMessageStartRef = useRef(null);
+  const prevLoadingRef = useRef(false);
   const inputRef = useRef(null);
 
   // Initialize messages state
@@ -67,6 +69,7 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
     setError("");
     setLoading(false);
     setIsLimitReachedState(false);
+    prevLoadingRef.current = false;
   }, [chatbot?.id]);
 
   // Check limits on mount/update
@@ -90,7 +93,21 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
   };
 
   useEffect(() => {
-    scrollToBottom();
+    if (loading) {
+      scrollToBottom();
+      prevLoadingRef.current = loading;
+      return;
+    }
+
+
+    if (prevLoadingRef.current && !loading) {
+      assistantMessageStartRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+
+    prevLoadingRef.current = loading;
   }, [messages, loading]);
 
   // Persist to LocalStorage whenever messages change
@@ -230,6 +247,11 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
     ? chatbot.suggestedMessages.split("\n").filter(Boolean)
     : [];
 
+  const lastAssistantIndex = messages.reduce(
+    (acc, msg, idx) => (msg.role === "assistant" ? idx : acc),
+    -1
+  );
+
   return (
     <>
       <div className="fixed bottom-6 right-6 z-[100] w-[90vw] md:w-[400px] flex flex-col gap-3 font-sans animate-in slide-in-from-bottom-10 fade-in duration-300">
@@ -276,6 +298,8 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
             {messages.map((msg, idx) => {
               const isUser = msg.role === "user";
               const isMsgRtl = isRTL(msg.content);
+              const shouldPinAssistantStart =
+                !isUser && idx === lastAssistantIndex;
 
               return (
                 <div
@@ -306,6 +330,7 @@ export function FloatingChatWidget({ chatbot, onClose, onMessageSent }) {
                       `}
                       style={isUser ? { backgroundColor: accentColor } : {}}
                       dir={isMsgRtl ? "rtl" : "ltr"}
+                    ref={shouldPinAssistantStart ? assistantMessageStartRef : null}
                     >
                       {renderMessageContent(msg.content)}
 
