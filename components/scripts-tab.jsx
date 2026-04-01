@@ -12,7 +12,7 @@ export default function ScriptsTab({ chatbots }) {
       process.env.NEXT_PUBLIC_DOMAIN_NAME || window.location.origin;
     const embedUrl = `${domain}/api/chat/${chatbot.id}/embed`;
     const scriptCode = `<!-- AI Chatbot Widget -->
-<script src="${embedUrl}" async></script>`;
+<script src="https://${embedUrl}" async></script>`;
 
     return scriptCode;
   };

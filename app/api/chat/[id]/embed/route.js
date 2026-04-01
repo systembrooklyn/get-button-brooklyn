@@ -1004,9 +1004,8 @@ else {
 
       saveMessages();
       renderMessages();
-;
 
-fetch('https://get-button-brooklyn-one.vercel.app/api/chat/public', {
+      fetch(${JSON.stringify(origin + "/api/chat/public")}, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

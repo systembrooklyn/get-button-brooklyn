@@ -24,7 +24,7 @@ export default async function RootLayout({ children }) {
       <body className="font-sans antialiased">
         {/* ✅ Chatbot embed */}
         <Script
-          src="https://get-button-brooklyn-one.vercel.app//api/chat/cmkwvaacy0001tbag8bslxdht/embed"
+          src="/api/chat/cmkwvaacy0001tbag8bslxdht/embed"
           strategy="afterInteractive"
         />
 
