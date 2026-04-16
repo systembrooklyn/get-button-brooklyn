@@ -80,6 +80,9 @@ export async function GET(request, { params }) {
     let messages = [];
     let loading = false;
     let isLimitReached = false;
+    let errorMessage = "";
+    let prevLoading = false;
+    let assistantMessageStartEl = null;
 
     /* ================== HELPER FUNCTIONS ================== */
     function isRTL(text) {
@@ -181,7 +184,7 @@ export async function GET(request, { params }) {
         width: 400px;
         height: 750px;
         max-height: 85vh;
-        background: #ffffff;
+        background: #0f172a;
         border-radius: 16px;
         box-shadow: 0 20px 40px rgba(0,0,0,.35);
         display: none;
@@ -321,7 +324,7 @@ export async function GET(request, { params }) {
         flex: 1;
         padding: 16px;
         overflow-y: auto;
-        background: #f9fafb;
+        background: #1e293b;
         scroll-behavior: smooth;
       }
 
@@ -402,9 +405,9 @@ export async function GET(request, { params }) {
       }
 
       .gb-bubble-bot {
-        background: white;
-        color: #111827;
-        border: 1px solid #e5e7eb;
+        background: #0b1733;
+        color: #e5e7eb;
+        border: 1px solid #334155;
         border-bottom-left-radius: 4px;
       }
 
@@ -422,7 +425,7 @@ export async function GET(request, { params }) {
 
       .gb-msg-bot .gb-msg-time {
         text-align: right;
-        color: #6b7280;
+        color: #94a3b8;
       }
 
       .gb-link {
@@ -431,7 +434,7 @@ export async function GET(request, { params }) {
         text-underline-offset: 2px;
         word-break: break-all;
         font-weight: 600;
-        color: #2563eb;
+        color: #60a5fa;
       }
 
       .gb-link:hover {
@@ -441,12 +444,12 @@ export async function GET(request, { params }) {
       .gb-sources {
         margin-top: 12px;
         padding-top: 12px;
-        border-top: 1px solid rgba(0,0,0,0.06);
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
       }
 
       .gb-sources-title {
         font-size: 10px;
-        color: #6b7280;
+        color: #94a3b8;
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.5px;
@@ -535,7 +538,7 @@ export async function GET(request, { params }) {
         align-items: center;
         gap: 4px;
         font-size: 12px;
-        color: #6b7280;
+        color: #94a3b8;
         margin-bottom: 8px;
         padding: 0 4px;
       }
@@ -564,15 +567,15 @@ export async function GET(request, { params }) {
         padding: 8px 16px;
         border-radius: 999px;
         border: 1px solid transparent;
-        background: #f3f4f6;
-        color: #374151;
+        background: #1d4ed8;
+        color: #c7d2fe;
         font-size: 14px;
         cursor: pointer;
         transition: all 0.2s;
       }
 
       .gb-suggestion-btn:hover {
-        background: #e5e7eb;
+        background: #1e40af;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       }
 
@@ -581,8 +584,8 @@ export async function GET(request, { params }) {
       }
 
       .gb-input-area {
-        background: #ffffff;
-        border-top: 1px solid #e5e7eb;
+        background: #0f172a;
+        border-top: 1px solid #334155;
         padding: 12px;
       }
 
@@ -597,8 +600,8 @@ export async function GET(request, { params }) {
         max-height: 128px;
         min-height: 44px;
         padding: 12px 16px;
-        background: #f9fafb;
-        color: #111827;
+        background: #1e293b;
+        color: #e2e8f0;
         border: 1px solid transparent;
         border-radius: 16px;
         font-size: 14px;
@@ -610,11 +613,11 @@ export async function GET(request, { params }) {
 
       .gb-input:focus {
         border-color: \${accentColor};
-        background: white;
+        background: #0f172a;
       }
 
       .gb-input::placeholder {
-        color: #9ca3af;
+        color: #94a3b8;
       }
 
       .gb-send-btn {
@@ -643,7 +646,7 @@ export async function GET(request, { params }) {
       }
 
       .gb-send-btn:disabled {
-        background: #d1d5db;
+        background: #475569;
         cursor: not-allowed;
       }
 
@@ -670,9 +673,9 @@ export async function GET(request, { params }) {
 
       .gb-limit-reached {
         padding: 24px;
-        background: #f9fafb;
+        background: #0b1733;
         border-radius: 12px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid #334155;
         text-align: center;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         animation: fadeInUp 0.3s ease-out;
@@ -681,7 +684,7 @@ export async function GET(request, { params }) {
       .gb-limit-icon-wrap {
         width: 48px;
         height: 48px;
-        background: #f3f4f6;
+        background: #1e293b;
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -692,19 +695,19 @@ export async function GET(request, { params }) {
       .gb-limit-icon {
         width: 24px;
         height: 24px;
-        color: #6b7280;
+        color: #94a3b8;
       }
 
       .gb-limit-title {
         font-size: 16px;
         font-weight: 700;
-        color: #111827;
+        color: #f8fafc;
         margin-bottom: 4px;
       }
 
       .gb-limit-text {
         font-size: 14px;
-        color: #6b7280;
+        color: #94a3b8;
         margin-bottom: 16px;
       }
 
@@ -854,13 +857,26 @@ else {
     /* ================== FUNCTIONS ================== */
     function renderMessages() {
       messagesDiv.innerHTML = '';
+      assistantMessageStartEl = null;
+      var lastAssistantIndex = -1;
+
+      for (var i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant') {
+          lastAssistantIndex = i;
+          break;
+        }
+      }
 
       messages.forEach(function(msg, idx) {
         var isUser = msg.role === 'user';
         var isMsgRtl = isRTL(msg.content);
+        var shouldPinAssistantStart = !isUser && idx === lastAssistantIndex;
 
         var msgWrap = document.createElement('div');
         msgWrap.className = 'gb-msg-wrap ' + (isUser ? 'gb-msg-user' : 'gb-msg-bot');
+        if (shouldPinAssistantStart) {
+          assistantMessageStartEl = msgWrap;
+        }
 
         var msgContent = document.createElement('div');
         msgContent.className = 'gb-msg-content';
@@ -983,7 +999,25 @@ else {
         }
       }
 
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      if (errorMessage) {
+        var errorWrap = document.createElement('div');
+        errorWrap.className = 'gb-error';
+        var errorBadge = document.createElement('span');
+        errorBadge.className = 'gb-error-badge';
+        errorBadge.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> ' + escapeHtml(errorMessage);
+        errorWrap.appendChild(errorBadge);
+        messagesDiv.appendChild(errorWrap);
+      }
+
+      if (loading) {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      } else if (prevLoading && assistantMessageStartEl) {
+        assistantMessageStartEl.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }
+      prevLoading = loading;
     }
 
     function handleSendMessage(textOverride) {
@@ -1001,6 +1035,8 @@ else {
       if (!textOverride) input.value = '';
       input.style.height = 'auto';
       loading = true;
+      errorMessage = '';
+      sendBtn.disabled = true;
 
       saveMessages();
       renderMessages();
@@ -1016,13 +1052,16 @@ else {
       .then(function(response) {
         if (response.status === 403) {
           isLimitReached = true;
+          errorMessage = 'Message limit reached.';
           renderInputArea();
           loading = false;
           renderMessages();
           return null;
         }
         if (!response.ok) {
-          throw new Error('Failed to send message');
+          return response.json().catch(function() { return {}; }).then(function(errorData) {
+            throw new Error(errorData.error || 'Failed to send message');
+          });
         }
         return response.json();
       })
@@ -1039,11 +1078,13 @@ else {
 
         messages.push(assistantMessage);
         loading = false;
+        errorMessage = '';
         saveMessages();
         renderMessages();
       })
       .catch(function(err) {
         console.error('[Chatbot] Error:', err);
+        errorMessage = err && err.message ? err.message : 'Failed to send message';
         loading = false;
         renderMessages();
       });
@@ -1057,6 +1098,7 @@ else {
           content: cfg.greetingMessage || 'Hello! How can I help you today?',
           createdAt: new Date().toISOString()
         }];
+        errorMessage = '';
         localStorage.removeItem('chat_' + cfg.id);
         renderMessages();
       }
@@ -1112,7 +1154,7 @@ else {
           handleSendMessage();
         };
 
-        newSendBtn.disabled = true;
+        newSendBtn.disabled = !newInput.value.trim() || loading;
 
         newInputWrap.appendChild(newInput);
         newInputWrap.appendChild(newSendBtn);
@@ -1165,6 +1207,7 @@ else {
     /* ================== INIT ================== */
     checkLimit();
     messages = loadMessages();
+    prevLoading = false;
     renderMessages();
     renderInputArea();
     
