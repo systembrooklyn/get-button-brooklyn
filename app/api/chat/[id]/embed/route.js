@@ -84,6 +84,16 @@ export async function GET(request, { params }) {
     let prevLoading = false;
     let assistantMessageStartEl = null;
 
+    var embedThemeMode = "system";
+    try {
+      var _savedTheme = localStorage.getItem("gb_embed_theme_" + cfg.id);
+      if (_savedTheme === "light" || _savedTheme === "dark" || _savedTheme === "system") {
+        embedThemeMode = _savedTheme;
+      }
+    } catch (e) {}
+    var systemThemeMq = null;
+    var systemThemeListener = null;
+
     /* ================== HELPER FUNCTIONS ================== */
     function isRTL(text) {
       if (!text) return false;
@@ -747,6 +757,87 @@ export async function GET(request, { params }) {
       .gb-upgrade-btn:hover {
         opacity: 0.9;
       }
+
+      /* ----- Light theme (effective) ----- */
+      .gb-window.gb-eff-light {
+        background: #ffffff;
+        box-shadow: 0 20px 40px rgba(0,0,0,.12);
+      }
+      .gb-window.gb-eff-light .gb-messages {
+        background: #f1f5f9;
+      }
+      .gb-window.gb-eff-light .gb-bubble-bot {
+        background: #ffffff;
+        color: #111827;
+        border: 1px solid #e2e8f0;
+      }
+      .gb-window.gb-eff-light .gb-msg-bot .gb-msg-time {
+        color: #64748b;
+      }
+      .gb-window.gb-eff-light .gb-link {
+        color: #2563eb;
+      }
+      .gb-window.gb-eff-light .gb-sources {
+        border-top-color: rgba(0,0,0,0.08);
+      }
+      .gb-window.gb-eff-light .gb-sources-title {
+        color: #64748b;
+      }
+      .gb-window.gb-eff-light .gb-loading-dot {
+        background: #94a3b8;
+      }
+      .gb-window.gb-eff-light .gb-suggestions-header {
+        color: #64748b;
+      }
+      .gb-window.gb-eff-light .gb-suggestions-list {
+        scrollbar-color: #94a3b8 #e2e8f0;
+      }
+      .gb-window.gb-eff-light .gb-suggestions-list::-webkit-scrollbar-track {
+        background: #e2e8f0;
+      }
+      .gb-window.gb-eff-light .gb-suggestions-list::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+      }
+      .gb-window.gb-eff-light .gb-suggestion-btn {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+      .gb-window.gb-eff-light .gb-suggestion-btn:hover {
+        background: #bfdbfe;
+      }
+      .gb-window.gb-eff-light .gb-input-area {
+        background: #ffffff;
+        border-top-color: #e2e8f0;
+      }
+      .gb-window.gb-eff-light .gb-input {
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      .gb-window.gb-eff-light .gb-input:focus {
+        background: #ffffff;
+      }
+      .gb-window.gb-eff-light .gb-input::placeholder {
+        color: #94a3b8;
+      }
+      .gb-window.gb-eff-light .gb-send-btn:disabled {
+        background: #cbd5e1;
+      }
+      .gb-window.gb-eff-light .gb-limit-reached {
+        background: #f8fafc;
+        border-color: #e2e8f0;
+      }
+      .gb-window.gb-eff-light .gb-limit-icon-wrap {
+        background: #e2e8f0;
+      }
+      .gb-window.gb-eff-light .gb-limit-icon {
+        color: #64748b;
+      }
+      .gb-window.gb-eff-light .gb-limit-title {
+        color: #0f172a;
+      }
+      .gb-window.gb-eff-light .gb-limit-text {
+        color: #64748b;
+      }
     \`;
     document.head.appendChild(style);
 
@@ -775,7 +866,6 @@ else {
 }
 
     var win = document.createElement("div");
-    win.className = "gb-window";
 
     var header = document.createElement("div");
     header.className = "gb-header";
@@ -831,7 +921,12 @@ else {
     closeBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
     closeBtn.title = "Close";
 
+    var themeToggleBtn = document.createElement("button");
+    themeToggleBtn.className = "gb-header-btn";
+    themeToggleBtn.type = "button";
+
     headerActions.appendChild(refreshBtn);
+    headerActions.appendChild(themeToggleBtn);
     headerActions.appendChild(closeBtn);
 
     headerLeft.appendChild(avatarWrap);
@@ -872,6 +967,86 @@ else {
     console.log("[v0] Widget elements appended to body");
     console.log("[v0] Bubble element:", bubble);
     console.log("[v0] Bubble styles:", window.getComputedStyle(bubble));
+
+    function getEffectiveAppearance() {
+      if (embedThemeMode === "light") return "light";
+      if (embedThemeMode === "dark") return "dark";
+      try {
+        return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      } catch (e) {
+        return "dark";
+      }
+    }
+
+    function syncWinShell() {
+      var eff = getEffectiveAppearance();
+      win.className = "gb-window";
+      if (open) win.classList.add("gb-open");
+      win.classList.add(eff === "light" ? "gb-eff-light" : "gb-eff-dark");
+    }
+
+    function updateThemeToggleButton() {
+      var titles = {
+        system: "Theme: Auto (device). Click for Light.",
+        light: "Theme: Light. Click for Dark.",
+        dark: "Theme: Dark. Click for Auto."
+      };
+      var t = titles[embedThemeMode] || titles.system;
+      themeToggleBtn.setAttribute("aria-label", t);
+      themeToggleBtn.title = t;
+      if (embedThemeMode === "system") {
+        themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
+      } else if (embedThemeMode === "light") {
+        themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
+      } else {
+        themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>';
+      }
+    }
+
+    function detachSystemThemeListener() {
+      if (!systemThemeMq || !systemThemeListener) return;
+      try {
+        if (systemThemeMq.removeEventListener) systemThemeMq.removeEventListener("change", systemThemeListener);
+        else if (systemThemeMq.removeListener) systemThemeMq.removeListener(systemThemeListener);
+      } catch (e) {}
+      systemThemeMq = null;
+      systemThemeListener = null;
+    }
+
+    function attachSystemThemeListener() {
+      detachSystemThemeListener();
+      if (embedThemeMode !== "system") return;
+      systemThemeMq = window.matchMedia("(prefers-color-scheme: dark)");
+      systemThemeListener = function() {
+        syncWinShell();
+      };
+      if (systemThemeMq.addEventListener) {
+        systemThemeMq.addEventListener("change", systemThemeListener);
+      } else if (systemThemeMq.addListener) {
+        systemThemeMq.addListener(systemThemeListener);
+      }
+    }
+
+    function applyEmbedTheme() {
+      syncWinShell();
+      updateThemeToggleButton();
+      attachSystemThemeListener();
+    }
+
+    function cycleEmbedTheme() {
+      var order = ["system", "light", "dark"];
+      var ix = order.indexOf(embedThemeMode);
+      embedThemeMode = order[(ix + 1) % 3];
+      try {
+        localStorage.setItem("gb_embed_theme_" + cfg.id, embedThemeMode);
+      } catch (e) {}
+      applyEmbedTheme();
+    }
+
+    themeToggleBtn.onclick = function(e) {
+      e.stopPropagation();
+      cycleEmbedTheme();
+    };
 
     /* ================== FUNCTIONS ================== */
     function syncFooterSuggestions() {
@@ -1194,7 +1369,7 @@ else {
     /* ================== EVENT LISTENERS ================== */
     bubble.onclick = function() {
       open = !open;
-      win.className = 'gb-window' + (open ? ' gb-open' : '');
+      syncWinShell();
       if (open && !isLimitReached) {
         setTimeout(function() {
           input.focus();
@@ -1204,7 +1379,7 @@ else {
 
     closeBtn.onclick = function() {
       open = false;
-      win.className = 'gb-window';
+      syncWinShell();
     };
 
     refreshBtn.onclick = handleClearChat;
@@ -1230,6 +1405,7 @@ else {
     checkLimit();
     messages = loadMessages();
     prevLoading = false;
+    applyEmbedTheme();
     renderInputArea();
     renderMessages();
     
