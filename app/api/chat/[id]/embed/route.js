@@ -528,7 +528,8 @@ export async function GET(request, { params }) {
       }
 
       .gb-suggestions {
-        margin-top: 12px;
+        margin-top: 0;
+        margin-bottom: 12px;
         padding: 0 4px;
         animation: fadeInUp 0.3s ease-out;
       }
@@ -552,13 +553,23 @@ export async function GET(request, { params }) {
         display: flex;
         overflow-x: auto;
         gap: 8px;
-        padding: 4px;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
+        padding: 4px 4px 8px;
+        scrollbar-width: thin;
+        scrollbar-color: #64748b #1e293b;
       }
 
       .gb-suggestions-list::-webkit-scrollbar {
-        display: none;
+        height: 6px;
+      }
+
+      .gb-suggestions-list::-webkit-scrollbar-track {
+        background: #1e293b;
+        border-radius: 999px;
+      }
+
+      .gb-suggestions-list::-webkit-scrollbar-thumb {
+        background: #64748b;
+        border-radius: 999px;
       }
 
       .gb-suggestion-btn {
@@ -584,9 +595,17 @@ export async function GET(request, { params }) {
       }
 
       .gb-input-area {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
         background: #0f172a;
         border-top: 1px solid #334155;
         padding: 12px;
+      }
+
+      .gb-suggestions-slot {
+        flex-shrink: 0;
+        min-height: 0;
       }
 
       .gb-input-wrap {
@@ -809,7 +828,7 @@ else {
 
     var closeBtn = document.createElement("button");
     closeBtn.className = "gb-header-btn";
-    closeBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 20-4-9-9-4 20-7z"/></svg>';
+    closeBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
     closeBtn.title = "Close";
 
     headerActions.appendChild(refreshBtn);
@@ -855,6 +874,39 @@ else {
     console.log("[v0] Bubble styles:", window.getComputedStyle(bubble));
 
     /* ================== FUNCTIONS ================== */
+    function syncFooterSuggestions() {
+      var slot = inputArea.querySelector('.gb-suggestions-slot');
+      if (!slot) return;
+      slot.innerHTML = '';
+      var showSuggestions = cfg.suggestedMessages &&
+                            !loading &&
+                            messages.length > 0 &&
+                            messages[messages.length - 1].role === 'assistant' &&
+                            !isLimitReached;
+      if (!showSuggestions) return;
+      var suggestions = cfg.suggestedMessages.split('\\n').filter(function(s) { return s.trim(); });
+      if (suggestions.length === 0) return;
+      var suggestionsDiv = document.createElement('div');
+      suggestionsDiv.className = 'gb-suggestions';
+      var suggestionsHeader = document.createElement('div');
+      suggestionsHeader.className = 'gb-suggestions-header';
+      suggestionsHeader.innerHTML = '<svg class="gb-suggestions-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Suggested:</span>';
+      suggestionsDiv.appendChild(suggestionsHeader);
+      var suggestionsList = document.createElement('div');
+      suggestionsList.className = 'gb-suggestions-list';
+      suggestions.forEach(function(s) {
+        var btn = document.createElement('button');
+        btn.className = 'gb-suggestion-btn';
+        btn.textContent = s;
+        btn.onclick = function() {
+          handleSendMessage(s);
+        };
+        suggestionsList.appendChild(btn);
+      });
+      suggestionsDiv.appendChild(suggestionsList);
+      slot.appendChild(suggestionsDiv);
+    }
+
     function renderMessages() {
       messagesDiv.innerHTML = '';
       assistantMessageStartEl = null;
@@ -964,41 +1016,6 @@ else {
         messagesDiv.appendChild(loadingWrap);
       }
 
-      var showSuggestions = cfg.suggestedMessages && 
-                            !loading && 
-                            messages.length > 0 && 
-                            messages[messages.length - 1].role === 'assistant' &&
-                            !isLimitReached;
-
-      if (showSuggestions) {
-        var suggestions = cfg.suggestedMessages.split('\\n').filter(function(s) { return s.trim(); });
-        if (suggestions.length > 0) {
-          var suggestionsDiv = document.createElement('div');
-          suggestionsDiv.className = 'gb-suggestions';
-
-          var suggestionsHeader = document.createElement('div');
-          suggestionsHeader.className = 'gb-suggestions-header';
-          suggestionsHeader.innerHTML = '<svg class="gb-suggestions-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Suggested:</span>';
-          suggestionsDiv.appendChild(suggestionsHeader);
-
-          var suggestionsList = document.createElement('div');
-          suggestionsList.className = 'gb-suggestions-list';
-
-          suggestions.forEach(function(s) {
-            var btn = document.createElement('button');
-            btn.className = 'gb-suggestion-btn';
-            btn.textContent = s;
-            btn.onclick = function() {
-              handleSendMessage(s);
-            };
-            suggestionsList.appendChild(btn);
-          });
-
-          suggestionsDiv.appendChild(suggestionsList);
-          messagesDiv.appendChild(suggestionsDiv);
-        }
-      }
-
       if (errorMessage) {
         var errorWrap = document.createElement('div');
         errorWrap.className = 'gb-error';
@@ -1018,6 +1035,7 @@ else {
         });
       }
       prevLoading = loading;
+      syncFooterSuggestions();
     }
 
     function handleSendMessage(textOverride) {
@@ -1125,6 +1143,10 @@ else {
 
         inputArea.appendChild(limitDiv);
       } else {
+        var suggestionsSlot = document.createElement('div');
+        suggestionsSlot.className = 'gb-suggestions-slot';
+        inputArea.appendChild(suggestionsSlot);
+
         var newInputWrap = document.createElement('div');
         newInputWrap.className = 'gb-input-wrap';
 
@@ -1208,8 +1230,8 @@ else {
     checkLimit();
     messages = loadMessages();
     prevLoading = false;
-    renderMessages();
     renderInputArea();
+    renderMessages();
     
     console.log("[v0] Widget initialization complete!");
   }
