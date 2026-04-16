@@ -84,15 +84,13 @@ export async function GET(request, { params }) {
     let prevLoading = false;
     let assistantMessageStartEl = null;
 
-    var embedThemeMode = "system";
+    var embedThemeMode = "light";
     try {
       var _savedTheme = localStorage.getItem("gb_embed_theme_" + cfg.id);
-      if (_savedTheme === "light" || _savedTheme === "dark" || _savedTheme === "system") {
+      if (_savedTheme === "light" || _savedTheme === "dark") {
         embedThemeMode = _savedTheme;
       }
     } catch (e) {}
-    var systemThemeMq = null;
-    var systemThemeListener = null;
 
     /* ================== HELPER FUNCTIONS ================== */
     function isRTL(text) {
@@ -968,75 +966,33 @@ else {
     console.log("[v0] Bubble element:", bubble);
     console.log("[v0] Bubble styles:", window.getComputedStyle(bubble));
 
-    function getEffectiveAppearance() {
-      if (embedThemeMode === "light") return "light";
-      if (embedThemeMode === "dark") return "dark";
-      try {
-        return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      } catch (e) {
-        return "dark";
-      }
-    }
-
     function syncWinShell() {
-      var eff = getEffectiveAppearance();
       win.className = "gb-window";
       if (open) win.classList.add("gb-open");
-      win.classList.add(eff === "light" ? "gb-eff-light" : "gb-eff-dark");
+      win.classList.add(embedThemeMode === "light" ? "gb-eff-light" : "gb-eff-dark");
     }
 
     function updateThemeToggleButton() {
-      var titles = {
-        system: "Theme: Auto (device). Click for Light.",
-        light: "Theme: Light. Click for Dark.",
-        dark: "Theme: Dark. Click for Auto."
-      };
-      var t = titles[embedThemeMode] || titles.system;
+      var isLight = embedThemeMode === "light";
+      var t = isLight
+        ? "Theme: Light. Click for Dark."
+        : "Theme: Dark. Click for Light.";
       themeToggleBtn.setAttribute("aria-label", t);
       themeToggleBtn.title = t;
-      if (embedThemeMode === "system") {
-        themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
-      } else if (embedThemeMode === "light") {
+      if (isLight) {
         themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
       } else {
         themeToggleBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>';
       }
     }
 
-    function detachSystemThemeListener() {
-      if (!systemThemeMq || !systemThemeListener) return;
-      try {
-        if (systemThemeMq.removeEventListener) systemThemeMq.removeEventListener("change", systemThemeListener);
-        else if (systemThemeMq.removeListener) systemThemeMq.removeListener(systemThemeListener);
-      } catch (e) {}
-      systemThemeMq = null;
-      systemThemeListener = null;
-    }
-
-    function attachSystemThemeListener() {
-      detachSystemThemeListener();
-      if (embedThemeMode !== "system") return;
-      systemThemeMq = window.matchMedia("(prefers-color-scheme: dark)");
-      systemThemeListener = function() {
-        syncWinShell();
-      };
-      if (systemThemeMq.addEventListener) {
-        systemThemeMq.addEventListener("change", systemThemeListener);
-      } else if (systemThemeMq.addListener) {
-        systemThemeMq.addListener(systemThemeListener);
-      }
-    }
-
     function applyEmbedTheme() {
       syncWinShell();
       updateThemeToggleButton();
-      attachSystemThemeListener();
     }
 
     function cycleEmbedTheme() {
-      var order = ["system", "light", "dark"];
-      var ix = order.indexOf(embedThemeMode);
-      embedThemeMode = order[(ix + 1) % 3];
+      embedThemeMode = embedThemeMode === "light" ? "dark" : "light";
       try {
         localStorage.setItem("gb_embed_theme_" + cfg.id, embedThemeMode);
       } catch (e) {}
