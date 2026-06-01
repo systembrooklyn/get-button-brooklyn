@@ -1,6 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { GoogleGenAI } from "@google/genai";
+// import { GoogleGenAI } from "@google/genai";
 
 const ADMIN_UID = "a1941b27-d783-45f0-bf73-f531a6394f02";
 
@@ -211,6 +211,7 @@ SOURCE CITATION RULES:
       orderBy: { createdAt: "desc" },
     });
 
+    /* Original Google GenAI Code (Commented Out)
     const history = recentMessages.reverse().map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content.substring(0, 800) }],
@@ -229,6 +230,62 @@ SOURCE CITATION RULES:
 
     const result = await chat.sendMessage({ message });
     const responseText = result.text.trim();
+    */
+
+    // OpenRouter Integration
+    const openrouterApiKey = process.env.OPENROUTER_API_KEY;
+    if (!openrouterApiKey) {
+      console.error("[OpenRouter] OPENROUTER_API_KEY not found in environment");
+      return Response.json(
+        { error: "OpenRouter API Key not configured. Please set OPENROUTER_API_KEY in your .env.local file." },
+        { status: 500, headers }
+      );
+    }
+
+    const messages = [
+      { role: "system", content: systemInstruction },
+      ...recentMessages.reverse().map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content.substring(0, 800),
+      })),
+      { role: "user", content: message },
+    ];
+
+    let responseText = "";
+    try {
+      const openRouterResponse = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${openrouterApiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": appDomain,
+            "X-Title": "Get Button Brooklyn",
+          },
+          body: JSON.stringify({
+            model: "openrouter/auto",
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 1000,
+          }),
+        },
+      );
+
+      if (!openRouterResponse.ok) {
+        const errText = await openRouterResponse.text();
+        throw new Error(`OpenRouter API error: ${openRouterResponse.status} - ${errText}`);
+      }
+
+      const openRouterData = await openRouterResponse.json();
+      responseText = openRouterData.choices?.[0]?.message?.content?.trim() || "";
+    } catch (apiError) {
+      console.error("[OpenRouter] API call failed:", apiError);
+      return Response.json(
+        { error: "Failed to fetch response from OpenRouter", details: apiError.message },
+        { status: 502, headers }
+      );
+    }
 
     const relevantSources = [];
 
